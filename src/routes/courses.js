@@ -18,7 +18,6 @@ router.post(
 router.put(
   '/:courseId',
   allowRoles([USER_ROLES.TEACHER]),
-  verifyTeacherOwnership,
   courseController.updateCourse
 );
 
@@ -26,7 +25,6 @@ router.put(
 router.delete(
   '/:courseId',
   allowRoles([USER_ROLES.TEACHER]),
-  verifyTeacherOwnership,
   courseController.deleteCourse
 );
 
