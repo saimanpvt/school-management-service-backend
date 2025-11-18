@@ -7,14 +7,6 @@ const USER_ROLES = {
   
 };
 
-// Role hierarchy (lower number = higher privilege)
-const ROLE_HIERARCHY = {
-  [USER_ROLES.ADMIN]: 1,
-  [USER_ROLES.TEACHER]: 2,
-  [USER_ROLES.STUDENT]: 3,
-  [USER_ROLES.PARENT]: 4
-};
-
 // Role names for display
 const ROLE_NAMES = {
   [USER_ROLES.ADMIN]: 'Admin',

@@ -1,11 +1,10 @@
-const { USER_ROLES, ROLE_HIERARCHY, HTTP_STATUS, MESSAGES } = require('../config/constants');
+const { USER_ROLES, HTTP_STATUS, MESSAGES } = require('../config/constants');
 
 /**
  * Middleware to check if user has required roles
- * @param {Array} allowedRoles - Array of role numbers that are allowed
- * @returns {Function} Express middleware function
+ * Uses ONLY direct role comparison (no hierarchy)
  */
-const allowRoles = (allowedRoles) => {
+const allowRoles = (allowedRoles = []) => {
   return (req, res, next) => {
     try {
       if (!req.user) {
@@ -16,27 +15,16 @@ const allowRoles = (allowedRoles) => {
       }
 
       const userRole = req.user.role;
-      
-      // Check if user's role is in allowed roles
-      if (allowedRoles.includes(userRole)) {
-        return next();
+
+      // Direct role validation — no hierarchy
+      if (!allowedRoles.includes(userRole)) {
+        return res.status(HTTP_STATUS.FORBIDDEN).json({
+          success: false,
+          message: MESSAGES.FORBIDDEN + ': Insufficient permissions'
+        });
       }
 
-      // Check role hierarchy - higher privilege roles can access lower privilege routes
-      const userRoleLevel = ROLE_HIERARCHY[userRole];
-      const hasPermission = allowedRoles.some(allowedRole => {
-        const allowedRoleLevel = ROLE_HIERARCHY[allowedRole];
-        return userRoleLevel <= allowedRoleLevel;
-      });
-
-      if (hasPermission) {
-        return next();
-      }
-
-      return res.status(HTTP_STATUS.FORBIDDEN).json({
-        success: false,
-        message: MESSAGES.FORBIDDEN + ': Insufficient permissions'
-      });
+      next();
     } catch (error) {
       return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
         success: false,
@@ -47,22 +35,29 @@ const allowRoles = (allowedRoles) => {
 };
 
 /**
- * Middleware to check if user is admin
+ * Admin only access
  */
 const requireAdmin = allowRoles([USER_ROLES.ADMIN]);
 
 /**
- * Middleware to check if user is admin or teacher
+ * Admin + Teacher
  */
-const requireTeacherOrAdmin = allowRoles([USER_ROLES.ADMIN, USER_ROLES.TEACHER]);
+const requireTeacherOrAdmin = allowRoles([
+  USER_ROLES.ADMIN,
+  USER_ROLES.TEACHER
+]);
 
 /**
- * Middleware to check if user is admin, teacher, or student
+ * Admin + Teacher + Student
  */
-const requireStudentTeacherOrAdmin = allowRoles([USER_ROLES.ADMIN, USER_ROLES.TEACHER, USER_ROLES.STUDENT]);
+const requireStudentTeacherOrAdmin = allowRoles([
+  USER_ROLES.ADMIN,
+  USER_ROLES.TEACHER,
+  USER_ROLES.STUDENT
+]);
 
 /**
- * Middleware to check if user can access student data (admin, teacher, or parent of the student)
+ * Parent-only or self-access for student
  */
 const canAccessStudentData = async (req, res, next) => {
   try {
@@ -76,12 +71,12 @@ const canAccessStudentData = async (req, res, next) => {
     const userRole = req.user.role;
     const studentId = req.params.id || req.params.studentId;
 
-    // Admin and teacher can access any student data
+    // Admin + teacher bypass checks — full access
     if (userRole === USER_ROLES.ADMIN || userRole === USER_ROLES.TEACHER) {
       return next();
     }
 
-    // Parent can only access their own child's data
+    // Parent: must match child's parentId
     if (userRole === USER_ROLES.PARENT) {
       if (!studentId) {
         return res.status(HTTP_STATUS.BAD_REQUEST).json({
@@ -90,8 +85,8 @@ const canAccessStudentData = async (req, res, next) => {
         });
       }
 
-      // Check if the student belongs to this parent
       const Student = require('../models/Student');
+
       const student = await Student.findOne({
         _id: studentId,
         parent: req.user._id,
@@ -101,28 +96,30 @@ const canAccessStudentData = async (req, res, next) => {
       if (!student) {
         return res.status(HTTP_STATUS.FORBIDDEN).json({
           success: false,
-          message: MESSAGES.FORBIDDEN + ': You can only access your child\'s data'
+          message: MESSAGES.FORBIDDEN + ': You can access only your child\'s data'
         });
       }
 
       return next();
     }
 
-    // Student can only access their own data
+    // Student can only view self
     if (userRole === USER_ROLES.STUDENT) {
       if (studentId && studentId !== req.user._id.toString()) {
         return res.status(HTTP_STATUS.FORBIDDEN).json({
           success: false,
-          message: MESSAGES.FORBIDDEN + ': You can only access your own data'
+          message: MESSAGES.FORBIDDEN + ': You can access only your own data'
         });
       }
       return next();
     }
 
+    // No one else allowed
     return res.status(HTTP_STATUS.FORBIDDEN).json({
       success: false,
       message: MESSAGES.FORBIDDEN + ': Insufficient permissions'
     });
+
   } catch (error) {
     return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,

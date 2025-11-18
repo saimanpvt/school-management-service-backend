@@ -42,6 +42,7 @@ studentSchema.index({ userId: 1 });
 studentSchema.index({ parentId: 1 });
 studentSchema.index({ classId: 1 });
 studentSchema.index({ studentId: 1 });
+studentSchema.index({ classId: 1 });
 
 // Ensure studentId is unique
 studentSchema.post('save', function(error, doc, next) {

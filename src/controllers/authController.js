@@ -152,7 +152,8 @@ const getProfile = asyncHandler(async (req, res) => {
   } else if (loggedInUser.role === USER_ROLES.TEACHER) { // Teacher can access own profile and students in their courses
     if (!email || email === loggedInUser.email) {
       targetUser = loggedInUser;
-    } else {
+    } 
+   /* else {
       // check if email belongs to student in teacher's courses
       const teacher = await Teacher.findOne({ userId: loggedInUser._id });
       const courses = await Course.find({ teacherId: teacher.userId }).select('_id');
@@ -166,6 +167,7 @@ const getProfile = asyncHandler(async (req, res) => {
       }
       targetUser = await User.findById(student.userId._id).select('-password -__v -createdAt -updatedAt');
     }
+  */
   } 
   // Student can access only own profile
   else if (loggedInUser.role === USER_ROLES.STUDENT) {

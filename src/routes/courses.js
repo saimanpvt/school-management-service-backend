@@ -1,22 +1,47 @@
 const express = require('express');
 const router = express.Router();
+
 const courseController = require('../controllers/courseController');
-const authMiddleware = require('../middlewares/authMiddleware');
-const { requireAdmin, allowRoles } = require('../middlewares/roleMiddleware');
-const { USER_ROLES } = require('../config/constants');
+const { allowRoles } = require('../middlewares/roleMiddleware');
+const { verifyTeacherOwnership } = require('../middlewares/verifyTeacherOwnership');
+const { HTTP_STATUS, USER_ROLES } = require('../config/constants');
+const { asyncHandler } = require('../middlewares/asyncHandler');
 
-// All routes require authentication
-router.use(authMiddleware);
+// ADMIN -> assign course (create or update assignment)
+router.post(
+  '/assign',
+  allowRoles([USER_ROLES.ADMIN]),
+  courseController.assignCourse
+);
 
-// Common routes (accessible by all authenticated users)
-router.get('/', courseController.getCourseList);
-router.get('/:id', courseController.getCourse);
+// TEACHER -> update own course
+router.put(
+  '/:courseId',
+  allowRoles([USER_ROLES.TEACHER]),
+  verifyTeacherOwnership,
+  courseController.updateCourse
+);
 
-// Student + Teacher routes
-router.post('/', allowRoles([USER_ROLES.ADMIN]), courseController.addCourse);
-router.put('/:id', allowRoles([USER_ROLES.ADMIN]), courseController.updateCourse);
+// TEACHER -> delete own course
+router.delete(
+  '/:courseId',
+  allowRoles([USER_ROLES.TEACHER]),
+  verifyTeacherOwnership,
+  courseController.deleteCourse
+);
 
-// Admin only routes
-router.delete('/:id', allowRoles([USER_ROLES.ADMIN]), courseController.deleteCourse);
+// VIEW courses (list) - Admin, Teacher, Student, Parent
+router.get(
+  '/',
+  allowRoles([USER_ROLES.ADMIN, USER_ROLES.TEACHER, USER_ROLES.STUDENT, USER_ROLES.PARENT]),
+  courseController.viewCourses
+);
+
+// VIEW single course
+router.get(
+  '/:courseId',
+  allowRoles([USER_ROLES.ADMIN, USER_ROLES.TEACHER, USER_ROLES.STUDENT, USER_ROLES.PARENT]),
+  courseController.viewCourseById
+);
 
 module.exports = router;
