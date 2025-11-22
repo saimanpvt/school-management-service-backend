@@ -1,99 +1,111 @@
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const { USER_ROLES } = require('../config/constants');
+const mongoose = require("mongoose");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const { USER_ROLES } = require("../config/constants");
 
-const userSchema = new mongoose.Schema({
-  email: {
-    type: String,
-    required: [true, 'Email is required'],
-    unique: true,
-    lowercase: true,
-    trim: true,
-    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email']
+const userSchema = new mongoose.Schema(
+  {
+    email: {
+      type: String,
+      required: [true, "Email is required"],
+      unique: true,
+      lowercase: true,
+      trim: true,
+      match: [
+        /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/,
+        "Please enter a valid email",
+      ],
+    },
+    uuid: {
+      type: String,
+      unique: true,
+      default: () => require("crypto").randomUUID(),
+      trim: true,
+    },
+    userID: {
+      type: String,
+      required: [true, "User ID is required"],
+      unique: true,
+      trim: true,
+    },
+    password: {
+      type: String,
+      required: [true, "Password is required"],
+      minlength: [6, "Password must be at least 6 characters long"],
+    },
+    firstName: {
+      type: String,
+      required: [true, "First name is required"],
+      trim: true,
+      maxlength: [50, "First name cannot exceed 50 characters"],
+    },
+    lastName: {
+      type: String,
+      required: [true, "Last name is required"],
+      trim: true,
+      maxlength: [50, "Last name cannot exceed 50 characters"],
+    },
+    role: {
+      type: Number,
+      required: [true, "Role is required"],
+      enum: Object.values(USER_ROLES),
+      default: USER_ROLES.STUDENT,
+    },
+    phone: {
+      type: String,
+      trim: true,
+      match: [/^\+?[\d\s\-\(\)]+$/, "Please enter a valid phone number"],
+    },
+    address: {
+      street: String,
+      city: String,
+      state: String,
+      zipCode: String,
+      country: String,
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    lastLogin: {
+      type: Date,
+    },
+    profileImage: {
+      type: String,
+    },
+    dob: {
+      type: Date,
+    },
+    gender: {
+      type: String,
+      enum: ["Male", "Female", "Other"],
+    },
+    bloodGroup: {
+      type: String,
+      enum: ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"],
+    },
   },
-  userID: { 
-    type: String,
-    unique: true,
-    required: [true, 'UserID is required'],
-    trim: true
-  },
-  password: {
-    type: String,
-    required: [true, 'Password is required'],
-    minlength: [6, 'Password must be at least 6 characters long']
-  },
-  firstName: {
-    type: String,
-    required: [true, 'First name is required'],
-    trim: true,
-    maxlength: [50, 'First name cannot exceed 50 characters']
-  },
-  lastName: {
-    type: String,
-    required: [true, 'Last name is required'],
-    trim: true,
-    maxlength: [50, 'Last name cannot exceed 50 characters']
-  },
-  role: {
-    type: Number,
-    required: [true, 'Role is required'],
-    enum: Object.values(USER_ROLES),
-    default: USER_ROLES.STUDENT
-  },
-  phone: {
-    type: String,
-    trim: true,
-    match: [/^\+?[\d\s\-\(\)]+$/, 'Please enter a valid phone number']
-  },
-  address: {
-    street: String,
-    city: String,
-    state: String,
-    zipCode: String,
-    country: String
-  },
-  isActive: {
-    type: Boolean,
-    default: true
-  },
-  lastLogin: {
-    type: Date
-  },
-  profileImage: {
-    type: String
-  },
-  dob: { 
-    type: Date 
-  },
-  gender: { 
-    type: String, 
-    enum: ['Male', 'Female', 'Other'] 
-  },
-  bloodGroup: { 
-    type: String, 
-    enum: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] 
-  },
-}, {
-  timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
-});
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  }
+);
 
 // Virtual for full name
-userSchema.virtual('fullName').get(function() {
+userSchema.virtual("fullName").get(function () {
   return `${this.firstName} ${this.lastName}`;
 });
 
 // Virtual for role name
-userSchema.virtual('roleName').get(function() {
+userSchema.virtual("roleName").get(function () {
   const roleNames = {
-    [USER_ROLES.ADMIN]: 'Admin',
-    [USER_ROLES.TEACHER]: 'Teacher',
-    [USER_ROLES.STUDENT]: 'Student',
-    [USER_ROLES.PARENT]: 'Parent'
+    [USER_ROLES.ADMIN]: "Admin",
+    [USER_ROLES.TEACHER]: "Teacher",
+    [USER_ROLES.STUDENT]: "Student",
+    [USER_ROLES.PARENT]: "Parent",
   };
-  return roleNames[this.role] || 'Unknown';
+  return roleNames[this.role] || "Unknown";
 });
 
 // Index for efficient queries
@@ -103,9 +115,12 @@ userSchema.index({ isActive: 1 });
 userSchema.index({ userID: 1 }, { unique: true });
 
 // Hash password before saving
-userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  
+userSchema.pre("save", async function (next) {
+  if (!this.isModified("password")) return next();
+  // Generate uuid if not present
+  if (!this.uuid) {
+    this.uuid = require("crypto").randomUUID();
+  }
   try {
     const salt = await bcrypt.genSalt(12);
     this.password = await bcrypt.hash(this.password, salt);
@@ -116,29 +131,29 @@ userSchema.pre('save', async function(next) {
 });
 
 // Compare password method
-userSchema.methods.comparePassword = async function(candidatePassword) {
+userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
 // Generate JWT token
-userSchema.methods.generateAuthToken = function() {
+userSchema.methods.generateAuthToken = function () {
   return jwt.sign(
-    { 
-      id: this._id, 
-      email: this.email, 
+    {
+      id: this._id,
+      uuid: this.uuid,
+      email: this.email,
       role: this.role,
-      fullName: this.fullName
+      fullName: this.fullName,
     },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRE }
+    process.env.JWT_SECRET
   );
 };
 
 // Remove password from JSON output
-userSchema.methods.toJSON = function() {
+userSchema.methods.toJSON = function () {
   const user = this.toObject();
   delete user.password;
   return user;
 };
 
-module.exports = mongoose.model('User', userSchema);
+module.exports = mongoose.model("User", userSchema);
