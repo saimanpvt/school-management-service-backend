@@ -129,6 +129,7 @@ const canAccessStudentData = async (req, res, next) => {
 };
 
 module.exports = {
+  USER_ROLES,
   allowRoles,
   requireAdmin,
   requireTeacherOrAdmin,
