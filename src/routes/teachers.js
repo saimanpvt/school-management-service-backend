@@ -8,7 +8,6 @@ const { requireAdmin } = require('../middlewares/roleMiddleware');
 router.use(authMiddleware);
 
 // Admin only routes
-router.post('/', requireAdmin, teacherController.addTeacher);
 router.get('/', requireAdmin, teacherController.getTeacherList);
 router.get('/:id', requireAdmin, teacherController.getTeacher);
 router.put('/:id', requireAdmin, teacherController.updateTeacher);

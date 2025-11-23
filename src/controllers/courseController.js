@@ -94,10 +94,6 @@ exports.assignCourse = asyncHandler(async (req, res) => {
 });
 
 
-/**
- * Teacher - update own course
- * Uses verifyTeacherOwnership middleware in routes, but double-check ownership here as well
- */
 exports.updateCourse = asyncHandler(async (req, res) => {
   const courseId = req.params.id;
   const updates = req.body;

@@ -120,19 +120,22 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-// Generate JWT token
+//generate auth token
 userSchema.methods.generateAuthToken = function() {
   return jwt.sign(
     { 
-      id: this._id, 
+      _id: this._id.toString(),     // <- REAL MongoDB identity
+      userID: this.userID,          // <- Admin assigned ID (registration no)
       email: this.email, 
-      role: this.role,
+      role: user.role,
       fullName: this.fullName
     },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRE }
   );
 };
+
+
 
 // Remove password from JSON output
 userSchema.methods.toJSON = function() {

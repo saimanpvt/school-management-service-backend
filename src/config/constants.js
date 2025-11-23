@@ -40,7 +40,6 @@ const MESSAGES = {
 
 module.exports = {
   USER_ROLES,
-  ROLE_HIERARCHY,
   ROLE_NAMES,
   HTTP_STATUS,
   MESSAGES

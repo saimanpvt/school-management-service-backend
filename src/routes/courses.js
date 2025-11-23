@@ -3,7 +3,6 @@ const router = express.Router();
 
 const courseController = require('../controllers/courseController');
 const { allowRoles } = require('../middlewares/roleMiddleware');
-const { verifyTeacherOwnership } = require('../middlewares/verifyTeacherOwnership');
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants');
 const { asyncHandler } = require('../middlewares/asyncHandler');
 

@@ -1,17 +1,17 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const { HTTP_STATUS, MESSAGES, ROLE_NAMES } = require('../config/constants');
+const { HTTP_STATUS, MESSAGES } = require('../config/constants');
 
 const authMiddleware = async (req, res, next) => {
   try {
     let token;
 
-    // Check for token in Authorization header
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    // From header
+    if (req.headers.authorization?.startsWith('Bearer')) {
       token = req.headers.authorization.split(' ')[1];
     }
 
-    // Check for token in cookies
+    // From cookies
     if (!token && req.cookies?.token) {
       token = req.cookies.token;
     }
@@ -34,8 +34,8 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    // Fetch user using email from token
-    const user = await User.findOne({ email: decoded.email }).select('-password -__v -createdAt -updatedAt');
+    // Fetch full user using internal _id
+    const user = await User.findById(decoded._id).select('-password -__v -createdAt -updatedAt');
 
     if (!user) {
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
@@ -51,8 +51,14 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    // Attach sanitized user object with roleName
-    req.user = user;
+    // Attach user to req
+    req.user = {
+      _id: user._id,              // internal unique ID
+      userID: user.userID,        // public registration ID
+      email: user.email,
+      role: decoded.role,                  // Number from token
+      roleName: ROLE_NAMES[decoded.role]   // String for convenience
+    };
 
     next();
   } catch (error) {
