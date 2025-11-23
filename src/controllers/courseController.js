@@ -93,7 +93,6 @@ exports.assignCourse = asyncHandler(async (req, res) => {
   }
 });
 
-
 exports.updateCourse = asyncHandler(async (req, res) => {
   const courseId = req.params.id;
   const updates = req.body;
@@ -155,8 +154,6 @@ exports.updateCourse = asyncHandler(async (req, res) => {
   return sendSuccessResponse(res, HTTP_STATUS.OK, 'Course updated successfully', course);
 });
 
-
-
 /**
  * Teacher - delete own course
  */
@@ -176,7 +173,6 @@ exports.deleteCourse = asyncHandler(async (req, res) => {
   return sendSuccessResponse(res, HTTP_STATUS.OK, 'Course deleted successfully');
 });
 
-
 /**
  * View courses (list) - role aware
  * Admin -> all courses
@@ -194,7 +190,7 @@ exports.viewCourses = asyncHandler(async (req, res) => {
       break;
 
     case USER_ROLES.TEACHER:
-      courses = await Course.find({ teacherId: loggedInUser._id }).populate('classId');
+      courses = await Course.find({ teacherId: loggedInUser._id }).populate('teacherId classId');
       break;
 
     case USER_ROLES.STUDENT: {
@@ -224,7 +220,6 @@ exports.viewCourses = asyncHandler(async (req, res) => {
 
   return sendSuccessResponse(res, HTTP_STATUS.OK, 'Courses retrieved successfully', courses);
 });
-
 
 /**
  * View single course by id - role aware
