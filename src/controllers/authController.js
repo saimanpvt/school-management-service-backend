@@ -401,11 +401,54 @@ const changePassword = asyncHandler(async (req, res) => {
   sendSuccessResponse(res, HTTP_STATUS.OK, 'Password changed successfully');
 });
 
+// DELETE USER (Admin Only)
+const deleteUser = asyncHandler(async (req, res) => {
+  const loggedInUser = req.user;
+  const userIdToDelete = req.params.userId;
+
+  // Only admin can delete
+  if (loggedInUser.role !== USER_ROLES.ADMIN) {
+    return sendErrorResponse(
+      res,
+      HTTP_STATUS.FORBIDDEN,
+      'Access forbidden: Only admin can delete users'
+    );
+  }
+
+  // Check user exists
+  const user = await User.findById(userIdToDelete);
+  if (!user) {
+    return sendErrorResponse(
+      res,
+      HTTP_STATUS.NOT_FOUND,
+      'User not found'
+    );
+  }
+
+  // Prevent admin from deleting themselves
+  if (String(loggedInUser._id) === String(user._id)) {
+    return sendErrorResponse(
+      res,
+      HTTP_STATUS.BAD_REQUEST,
+      'Admin cannot delete their own account'
+    );
+  }
+
+  await User.findByIdAndDelete(userIdToDelete);
+
+  return sendSuccessResponse(
+    res,
+    HTTP_STATUS.OK,
+    'User deleted successfully'
+  );
+});
+
 module.exports = {
   register,
   login,
   logout,
   getProfile,
   updateProfile,
-  changePassword
+  changePassword,
+  deleteUser
 };
