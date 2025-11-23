@@ -171,7 +171,7 @@ exports.deleteCourse = asyncHandler(async (req, res) => {
   const course = await Course.findById(courseId);
   if (!course) return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Course not found');
 
-  if (String(course.teacherId) !== String(loggedInUser._id)) {
+  if (loggedInUser.role == USER_ROLES.ADMIN) {
     return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, 'Access forbidden: not course owner');
   }
 

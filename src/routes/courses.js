@@ -21,10 +21,10 @@ router.put(
   courseController.updateCourse
 );
 
-// TEACHER -> delete own course
+// ADMIN -> delete course
 router.delete(
   '/:courseId',
-  allowRoles([USER_ROLES.TEACHER]),
+  allowRoles([USER_ROLES.ADMIN]),
   courseController.deleteCourse
 );
 
