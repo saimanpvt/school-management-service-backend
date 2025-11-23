@@ -1,168 +1,164 @@
 const Exam = require('../models/Exam');
-const User = require('../models/User');
 const Course = require('../models/Course');
-const { asyncHandler } = require('../middlewares/errorMiddleware');
-const { sendSuccessResponse, sendErrorResponse, sendPaginatedResponse } = require('../utils/response');
-const { HTTP_STATUS, USER_ROLES } = require('../config/constants');
-const { validateRequiredFields, isValidObjectId, validateAcademicYear } = require('../utils/validation');
-const { getPaginationOptions, getPaginationMeta, getSortOptions } = require('../utils/pagination');
+const Student = require('../models/Student');
+const { USER_ROLES } = require('../config/constants');
 
-/**
- * Get exam record list (Common - accessible by all roles)
- */
-const getExamRecordList = asyncHandler(async (req, res) => {
-  const paginationOptions = getPaginationOptions(req.query);
-  const sortOptions = getSortOptions(req.query, ['examDate', 'examName', 'examType', 'createdAt']);
+// ---------------------------------------------------
+// GET Exam List - role-based
+// ---------------------------------------------------
+exports.getExamRecordList = async (req, res) => {
+  try {
+    const user = req.user;
 
-  const filters = { isActive: true };
-  
-  if (req.query.course) filters.course = req.query.course;
-  if (req.query.teacher) filters.teacher = req.query.teacher;
-  if (req.query.examType) filters.examType = req.query.examType;
-  if (req.query.academicYear) filters.academicYear = req.query.academicYear;
-  if (req.query.semester) filters.semester = req.query.semester;
+    // ADMIN → All exams
+    if (user.role === USER_ROLES.ADMIN) {
+      const allExams = await Exam.find({ isActive: true });
+      return res.json({ success: true, exams: allExams });
+    }
 
-  const exams = await Exam.find(filters)
-    .populate([
-      { path: 'course', select: 'courseName courseCode department' },
-      { path: 'teacher', select: 'firstName lastName email' }
-    ])
-    .sort(sortOptions)
-    .skip(paginationOptions.skip)
-    .limit(paginationOptions.limit);
+    // TEACHER → exams of their courses
+    if (user.role === USER_ROLES.TEACHER) {
+      const teacherCourses = await Course.find({ teacherId: user._id }).select('_id');
 
-  const total = await Exam.countDocuments(filters);
-  const paginationMeta = getPaginationMeta(total, paginationOptions.page, paginationOptions.limit);
+      const exams = await Exam.find({
+        course: { $in: teacherCourses.map(c => c._id) },
+        isActive: true
+      });
 
-  sendPaginatedResponse(res, HTTP_STATUS.OK, 'Exams retrieved successfully', exams, paginationMeta);
-});
+      return res.json({ success: true, exams });
+    }
 
-/**
- * Get single exam record (Common - accessible by all roles)
- */
-const getExamRecord = asyncHandler(async (req, res) => {
-  const { id } = req.params;
+    // STUDENT → exams of student's class
+    if (user.role === USER_ROLES.STUDENT) {
+      const student = await Student.findOne({ userId: user._id }).select('classId');
+      if (!student)
+        return res.status(404).json({ success: false, message: 'Student record not found' });
 
-  if (!isValidObjectId(id)) {
-    return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, 'Invalid exam ID');
+      const exams = await Exam.find({ classId: student.classId, isActive: true });
+      return res.json({ success: true, exams });
+    }
+
+    // PARENT → exams of child’s class
+    if (user.role === USER_ROLES.PARENT) {
+      const children = await Student.find({ parentId: user._id }).select('classId');
+      if (children.length === 0)
+        return res.status(404).json({ success: false, message: "No children found" });
+
+      const classIds = children.map(c => c.classId);
+      const exams = await Exam.find({ classId: { $in: classIds }, isActive: true });
+      return res.json({ success: true, exams });
+    }
+
+    return res.status(403).json({ success: false, message: "Forbidden" });
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
+};
 
-  const exam = await Exam.findById(id)
-    .populate([
-      { path: 'course', select: 'courseName courseCode department' },
-      { path: 'teacher', select: 'firstName lastName email phone' }
-    ]);
+// ---------------------------------------------------
+// GET single exam - role-protected
+// ---------------------------------------------------
+exports.getExamRecord = async (req, res) => {
+  try {
+    const exam = await Exam.findById(req.params.id);
+    if (!exam) return res.status(404).json({ message: 'Exam not found' });
 
-  if (!exam) {
-    return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Exam not found');
+    const user = req.user;
+
+    if (user.role === USER_ROLES.ADMIN) return res.json({ success: true, exam });
+
+    if (user.role === USER_ROLES.TEACHER) {
+      const course = await Course.findById(exam.course);
+      if (!course || course.teacherId.toString() !== user._id.toString())
+        return res.status(403).json({ message: "You don't own this course" });
+      return res.json({ success: true, exam });
+    }
+
+    if (user.role === USER_ROLES.STUDENT) {
+      const student = await Student.findOne({ userId: user._id });
+      if (!student || student.classId.toString() !== exam.classId.toString())
+        return res.status(403).json({ message: "Not allowed" });
+      return res.json({ success: true, exam });
+    }
+
+    if (user.role === USER_ROLES.PARENT) {
+      const child = await Student.findOne({ parentId: user._id, classId: exam.classId });
+      if (!child) return res.status(403).json({ message: "Not allowed" });
+      return res.json({ success: true, exam });
+    }
+
+    return res.status(403).json({ message: "Forbidden" });
+
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
+};
 
-  sendSuccessResponse(res, HTTP_STATUS.OK, 'Exam retrieved successfully', exam);
-});
+// ---------------------------------------------------
+// ADD exam - Teacher only
+// ---------------------------------------------------
+exports.addExamRecord = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+    const { course } = req.body;
 
-/**
- * Add exam record (Student + Teacher)
- */
-const addExamRecord = asyncHandler(async (req, res) => {
-  const {
-    examName,
-    examType,
-    course,
-    subject,
-    teacher,
-    totalMarks,
-    passingMarks,
-    examDate,
-    startTime,
-    endTime,
-    duration,
-    venue,
-    instructions,
-    academicYear,
-    semester
-  } = req.body;
+    const courseDoc = await Course.findById(course);
+    if (!courseDoc) return res.status(404).json({ message: "Course not found" });
 
-  const requiredFields = ['examName', 'examType', 'course', 'subject', 'teacher', 'totalMarks', 'passingMarks', 'examDate', 'startTime', 'endTime', 'duration', 'venue', 'academicYear', 'semester'];
-  const fieldValidation = validateRequiredFields(req.body, requiredFields);
-  
-  if (!fieldValidation.isValid) {
-    return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, 'Validation failed', fieldValidation.errors);
+    if (courseDoc.teacherId.toString() !== teacherId.toString())
+      return res.status(403).json({ message: "You don't own this course" });
+
+    // Auto-fill dependencies
+    req.body.classId = courseDoc.classId;
+    req.body.academicYear = courseDoc.academicYear;
+
+    const exam = await Exam.create(req.body);
+    return res.status(201).json({ success: true, exam });
+
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
+};
 
-  if (!isValidObjectId(course)) {
-    return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, 'Invalid course ID');
+// ---------------------------------------------------
+// UPDATE exam - Teacher only
+// ---------------------------------------------------
+exports.updateExamRecord = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+    const exam = await Exam.findById(req.params.id);
+    if (!exam) return res.status(404).json({ message: "Exam not found" });
+
+    const course = await Course.findById(exam.course);
+    if (!course || course.teacherId.toString() !== teacherId.toString())
+      return res.status(403).json({ message: "You don't own this course" });
+
+    const updated = await Exam.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json({ success: true, exam: updated });
+
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
+};
 
-  if (!isValidObjectId(teacher)) {
-    return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, 'Invalid teacher ID');
+// ---------------------------------------------------
+// DELETE exam - Teacher only
+// ---------------------------------------------------
+exports.deleteExamRecord = async (req, res) => {
+  try {
+    const teacherId = req.user._id;
+    const exam = await Exam.findById(req.params.id);
+    if (!exam) return res.status(404).json({ message: "Exam not found" });
+
+    const course = await Course.findById(exam.course);
+    if (!course || course.teacherId.toString() !== teacherId.toString())
+      return res.status(403).json({ message: "You don't own this course" });
+
+    await Exam.findByIdAndDelete(req.params.id);
+    res.json({ success: true, message: "Exam deleted" });
+
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
-
-  const courseDoc = await Course.findById(course);
-  if (!courseDoc) {
-    return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Course not found');
-  }
-
-  const teacherDoc = await User.findById(teacher);
-  if (!teacherDoc || teacherDoc.role !== USER_ROLES.TEACHER) {
-    return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, 'Teacher not found or invalid role');
-  }
-
-  const exam = await Exam.create({
-    examName,
-    examType,
-    course,
-    subject,
-    teacher,
-    totalMarks,
-    passingMarks,
-    examDate,
-    startTime,
-    endTime,
-    duration,
-    venue,
-    instructions,
-    academicYear,
-    semester
-  });
-
-  await exam.populate([
-    { path: 'course', select: 'courseName courseCode department' },
-    { path: 'teacher', select: 'firstName lastName email' }
-  ]);
-
-  sendSuccessResponse(res, HTTP_STATUS.CREATED, 'Exam added successfully', exam);
-});
-
-/**
- * Update exam record (Student + Teacher)
- */
-const updateExamRecord = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const updateData = req.body;
-
-  if (!isValidObjectId(id)) {
-    return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, 'Invalid exam ID');
-  }
-
-  const exam = await Exam.findByIdAndUpdate(
-    id,
-    updateData,
-    { new: true, runValidators: true }
-  ).populate([
-    { path: 'course', select: 'courseName courseCode department' },
-    { path: 'teacher', select: 'firstName lastName email' }
-  ]);
-
-  if (!exam) {
-    return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Exam not found');
-  }
-
-  sendSuccessResponse(res, HTTP_STATUS.OK, 'Exam updated successfully', exam);
-});
-
-module.exports = {
-  getExamRecordList,
-  getExamRecord,
-  addExamRecord,
-  updateExamRecord
 };

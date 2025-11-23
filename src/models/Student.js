@@ -15,13 +15,13 @@ const studentSchema = new mongoose.Schema({
   parentId: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'Parent' 
-  }, // optional if parent exists
+  }, 
   admissionDate: { 
     type: Date 
   },
   leavingDate: { 
     type: Date 
-  }, // optional
+  }, 
   emergencyContact: { 
     type: String, 
     trim: true, 

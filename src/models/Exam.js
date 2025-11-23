@@ -17,15 +17,15 @@ const examSchema = new mongoose.Schema({
     ref: 'Course',
     required: [true, 'Course reference is required']
   },
-  subject: {
-    type: String,
-    required: [true, 'Subject is required'],
-    trim: true
-  },
-  teacher: {
+  classId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: [true, 'Teacher reference is required']
+    ref: 'Class',
+    required: [true, 'Class reference is required']
+  },
+  academicYear: {
+    type: String,
+    required: [true, 'Academic year is required'],
+    match: [/^\d{4}-\d{4}$/, 'Academic year must be in format YYYY-YYYY']
   },
   totalMarks: {
     type: Number,
@@ -71,16 +71,6 @@ const examSchema = new mongoose.Schema({
     type: String,
     maxlength: [1000, 'Instructions cannot exceed 1000 characters']
   },
-  academicYear: {
-    type: String,
-    required: [true, 'Academic year is required'],
-    match: [/^\d{4}-\d{4}$/, 'Academic year must be in format YYYY-YYYY']
-  },
-  semester: {
-    type: String,
-    required: [true, 'Semester is required'],
-    enum: ['Spring', 'Summer', 'Fall', 'Winter']
-  },
   isActive: {
     type: Boolean,
     default: true
@@ -118,12 +108,11 @@ examSchema.virtual('durationInHours').get(function() {
   return (this.duration / 60).toFixed(2);
 });
 
-// Index for efficient queries
+// Indexes for efficient queries
 examSchema.index({ course: 1 });
-examSchema.index({ teacher: 1 });
-examSchema.index({ examDate: 1 });
+examSchema.index({ classId: 1 });
 examSchema.index({ academicYear: 1 });
-examSchema.index({ semester: 1 });
+examSchema.index({ examDate: 1 });
 examSchema.index({ examType: 1 });
 examSchema.index({ isActive: 1 });
 

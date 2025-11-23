@@ -14,6 +14,6 @@ router.use(authMiddleware);
 router.get('/profile', authController.getProfile);
 router.put('/profile', authController.updateProfile);
 router.put('/change-password', authController.changePassword);
-router.delete('/delete/:userId', authMiddleware, deleteUser);
+router.delete('/delete/:userId', authController.deleteUser);
 
 module.exports = router;
