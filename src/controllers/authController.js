@@ -479,6 +479,72 @@ const deleteUser = asyncHandler(async (req, res) => {
   return sendSuccessResponse(res, HTTP_STATUS.OK, "User and related data deleted successfully");
 });
 
+const getAllUsers = asyncHandler(async(req, res) => {
+  try {
+    // --- Teachers (random list) ---
+    const teachers = await User.find({ role: USER_ROLES.TEACHER })
+      .select('-password -__v')
+      .lean();
+
+    // --- Students grouped by class ---
+    const students = await Student.find()
+      .populate('userId', 'firstName lastName email phone')
+      .populate('classId', 'className')
+      .lean();
+
+    const studentsByClass = {};
+    students.forEach(s => {
+      const className = s.classId?.className || 'Unknown Class';
+      if (!studentsByClass[className]) studentsByClass[className] = [];
+      studentsByClass[className].push({
+        studentId: s.userId._id,
+        firstName: s.userId.firstName,
+        lastName: s.userId.lastName,
+        email: s.userId.email,
+        phone: s.userId.phone
+      });
+    });
+
+    // --- Parents grouped by class (via children) ---
+    const parents = await Parent.find().populate({
+      path: 'childrenId',
+      populate: { path: 'userId classId', select: 'firstName lastName email phone className' }
+    }).lean();
+
+    const parentsByClass = {};
+    parents.forEach(parent => {
+      parent.childrenId.forEach(child => {
+        const className = child.classId?.className || 'Unknown Class';
+        if (!parentsByClass[className]) parentsByClass[className] = [];
+
+        // Avoid duplicates: if same parent already in the array
+        if (!parentsByClass[className].some(p => p.parentId.toString() === parent.userId.toString())) {
+          parentsByClass[className].push({
+            parentId: parent.userId._id,
+            firstName: parent.userId.firstName,
+            lastName: parent.userId.lastName,
+            email: parent.userId.email,
+            phone: parent.userId.phone
+          });
+        }
+      });
+    });
+
+    res.json({
+      success: true,
+      data: {
+        teachers,
+        studentsByClass,
+        parentsByClass
+      }
+    });
+
+  } catch (err) {
+    console.error("Error fetching users for admin:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
 module.exports = {
   register,
   login,
@@ -486,5 +552,6 @@ module.exports = {
   getProfile,
   updateProfile,
   changePassword,
-  deleteUser
+  deleteUser,
+  getAllUsers
 };

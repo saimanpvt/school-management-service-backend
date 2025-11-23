@@ -16,4 +16,7 @@ router.put('/profile', authController.updateProfile);
 router.put('/change-password', authController.changePassword);
 router.delete('/delete/:userId', authController.deleteUser);
 
+//All user list for admin
+router.get('/users', authController.getAllUsers);
+
 module.exports = router;
