@@ -135,8 +135,6 @@ userSchema.methods.generateAuthToken = function() {
   );
 };
 
-
-
 // Remove password from JSON output
 userSchema.methods.toJSON = function() {
   const user = this.toObject();

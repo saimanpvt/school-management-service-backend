@@ -11,13 +11,12 @@ const connectDB = require('./config/database');
 
 // Import routes
 const authRoutes = require('./routes/auth');
-const studentRoutes = require('./routes/students');
-const teacherRoutes = require('./routes/teachers');
 const courseRoutes = require('./routes/courses');
 const marksRoutes = require('./routes/marks');
 const examRoutes = require('./routes/exams');
 const referenceRoutes = require('./routes/references');
 const feeRoutes = require('./routes/fees');
+const classRoutes = require('./routes/class');
 
 // Import middlewares
 const { errorHandler, notFound } = require('./middlewares/errorMiddleware');
@@ -91,33 +90,12 @@ app.get('/health', (req, res) => {
 
 // API routes
 app.use('/api/auth', authRoutes);
-app.use('/api/students', studentRoutes);
-app.use('/api/teachers', teacherRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/marks', marksRoutes);
 app.use('/api/exams', examRoutes);
 app.use('/api/references', referenceRoutes);
 app.use('/api/fees', feeRoutes);
-
-// API documentation endpoint
-app.get('/api', (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: 'Student Management System API',
-    version: '1.0.0',
-    endpoints: {
-      auth: '/api/auth',
-      students: '/api/students',
-      teachers: '/api/teachers',
-      courses: '/api/courses',
-      marks: '/api/marks',
-      exams: '/api/exams',
-      references: '/api/references',
-      fees: '/api/fees'
-    },
-    documentation: 'See README.md for detailed API documentation'
-  });
-});
+app.use('/api/fees', classRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
