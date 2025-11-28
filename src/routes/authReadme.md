@@ -94,7 +94,12 @@ You can copy directly into your project as `README.md`.
     "firstName": "John",
     "lastName": "Doe",
     "role": "TEACHER",
-    "phone": "9876543210"
+    "phone": "9876543210",
+    "address: "Trichy",
+    "dob": "17th Aug 2002",
+   "gender"": "Male",
+    "bloodGroup": "O+",
+    "profileImage": "../../img.jpg"
   }
 }
 ```
@@ -125,9 +130,17 @@ You can copy directly into your project as `README.md`.
   "data": {
     "_id": "65a...",
     "email": "user@example.com",
+    "userID": "U123",
     "firstName": "John",
-    "role": "ADMIN",
-    "token": "jwt-token"
+    "lastName": "Doe",
+    "role": "TEACHER",
+    "phone": "9876543210",
+    "address: "Trichy",
+    "dob": "17th Aug 2002",
+   "gender"": "Male",
+    "bloodGroup": "O+",
+    "profileImage": "../../img.jpg",
+    "token"
   }
 }
 ```
@@ -181,10 +194,17 @@ You can copy directly into your project as `README.md`.
   "success": true,
   "message": "Profile retrieved successfully",
   "data": {
-    "email": "student@example.com",
-    "firstName": "Sara",
-    "lastName": "Khan",
-    "role": "STUDENT"
+    "email": "user@example.com",
+    "userID": "U123",
+    "firstName": "John",
+    "lastName": "Doe",
+    "role": "TEACHER",
+    "phone": "9876543210",
+    "address: "Trichy",
+    "dob": "17th Aug 2002",
+   "gender"": "Male",
+    "bloodGroup": "O+",
+    "profileImage": "../../img.jpg"
   }
 }
 ```
