@@ -95,11 +95,11 @@ You can copy directly into your project as `README.md`.
     "lastName": "Doe",
     "role": "TEACHER",
     "phone": "9876543210",
-    "address": "Chennai",
-    "dob": "2000-01-01",
-    "gender": "Male",
+    "address: "Trichy",
+    "dob": "17th Aug 2002",
+   "gender"": "Male",
     "bloodGroup": "O+",
-    "profileImage": "https://img.com/pic.jpg"
+    "profileImage": "../../img.jpg"
   }
 }
 ```
@@ -137,14 +137,14 @@ You can copy directly into your project as `README.md`.
     "userID": "U123",
     "firstName": "John",
     "lastName": "Doe",
-    "phone": "9876543210",
-    "address": "Chennai",
-    "dob": "2000-01-01",
-    "gender": "Male",
-    "bloodGroup": "O+",
     "role": "TEACHER",
-    "profileImage": "https://img.com/pic.jpg",
-    "token": "jwt-token-here"
+    "phone": "9876543210",
+    "address: "Trichy",
+    "dob": "17th Aug 2002",
+   "gender"": "Male",
+    "bloodGroup": "O+",
+    "profileImage": "../../img.jpg",
+    "token"
   }
 }
 ```
@@ -277,16 +277,16 @@ Response format (same for all roles):
   "message": "Profile retrieved successfully",
   "data": {
     "email": "user@example.com",
-    "userID": "USR123456",
+    "userID": "U123",
     "firstName": "John",
     "lastName": "Doe",
+    "role": "TEACHER",
     "phone": "9876543210",
-    "address": "Sample address",
-    "dob": "2001-05-22",
-    "gender": "Male",
+    "address: "Trichy",
+    "dob": "17th Aug 2002",
+   "gender"": "Male",
     "bloodGroup": "O+",
-    "role": "STUDENT",
-    "profileImage": "https://.../profile.jpg"
+    "profileImage": "../../img.jpg"
   }
 }
 ```
