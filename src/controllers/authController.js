@@ -7,6 +7,8 @@ const Parent = require('../models/Parent');
 const Teacher = require('../models/Teacher');
 const Student = require('../models/Student');
 const Course = require('../models/Course');
+const jwt = require('jsonwebtoken');
+const generateID = require('../utils/generateId');
 
 
 // Register a new user
@@ -36,21 +38,9 @@ const register = asyncHandler(async (req, res) => {
   } = req.body;
 
   // Required validations
-  const requiredFields = ['email', 'userID', 'password', 'firstName', 'lastName', 'role'];
-  const fieldValidation = validateRequiredFields(req.body, requiredFields);
-  if (!fieldValidation.isValid) {
-    return sendErrorResponse(
-      res,
-      HTTP_STATUS.BAD_REQUEST,
-      'Validation failed',
-      fieldValidation.errors
-    );
-  }
-
   if (!isValidEmail(email)) {
     return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, 'Invalid email');
   }
-
   const passwordValidation = validatePassword(password, 'register');
   if (!passwordValidation.isValid) {
     return sendErrorResponse(
@@ -60,7 +50,35 @@ const register = asyncHandler(async (req, res) => {
       passwordValidation.errors
     );
   }
-
+  // Convert string role → number for DB
+  const roleNumber = USER_ROLES[role?.toUpperCase()];
+  if (!roleNumber) {
+    return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, 'Invalid role provided');
+  }
+  const requiredFields = ['email', 'userID', 'password', 'firstName', 'lastName', 'role'];
+  if (roleNumber === USER_ROLES.TEACHER) {
+    requiredFields.push('employeeId');
+    requiredFields.push('experience');
+    requiredFields.push('DOJ');
+  }
+  if(roleNumber === USER_ROLES.STUDENT) {
+    requiredFields.push('classId');
+    requiredFields.push('admissionDate');
+    requiredFields.push('studentId');
+  }
+  if(roleNumber === USER_ROLES.PARENT) {
+    requiredFields.push('childrenId');
+    const existingUser = await User.findOne({ userID: req.body.childrenId });
+  }
+  const fieldValidation = validateRequiredFields(req.body, requiredFields);
+  if (!fieldValidation.isValid) {
+    return sendErrorResponse(
+      res,
+      HTTP_STATUS.BAD_REQUEST,
+      'Validation failed, Some mandatory fields missing',
+      fieldValidation.errors
+    );
+  }
   // Check user already exists
   const existingUser = await User.findOne({ email });
   if (existingUser) {
@@ -70,13 +88,6 @@ const register = asyncHandler(async (req, res) => {
       'User already exists with this email'
     );
   }
-
-  // Convert string role → number for DB
-  const roleNumber = USER_ROLES[role?.toUpperCase()];
-  if (!roleNumber) {
-    return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, 'Invalid role provided');
-  }
-
   // Create the user
   const addedUser = await User.create({
     email,
@@ -93,6 +104,24 @@ const register = asyncHandler(async (req, res) => {
     profileImage: profileImage || undefined
   });
 
+  //if user is teacher
+  if (roleNumber === USER_ROLES.TEACHER) {
+    await Teacher.create({
+      userId: addedUser._id,
+      employeeId: sanitizeString(req.body.employeeId),
+      experience: req.body.experience,
+      DOJ: req.body.DOJ
+    })
+  }
+   //if user is student
+  if (roleNumber === USER_ROLES.STUDENT) {
+    await Student.create({
+      userId: addedUser._id,
+      classId: req.body.classId,
+      admissionDate: req.body.admissionDate,
+      studentId: sanitizeString(req.body.studentId),
+    })
+  }
   // Response
   sendSuccessResponse(res, HTTP_STATUS.CREATED, 'User registered successfully', {
     _id: addedUser._id,
@@ -193,7 +222,7 @@ const logout = asyncHandler(async (req, res) => {
 // Get user profile
 const getProfile = asyncHandler(async (req, res) => {
   const loggedInUser = req.user;
-  const { email } = req.body; // optional for admin/parent/teacher
+  const { email } = req.body;
 
   let targetUser;
 
@@ -205,39 +234,28 @@ const getProfile = asyncHandler(async (req, res) => {
     if (!targetUser) {
       return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'User not found');
     }
-  }
-
-  // --- PARENT ---
-  else if (loggedInUser.role === USER_ROLES.PARENT) {
+  }else if (loggedInUser.role === USER_ROLES.PARENT) {
     if (!email || email === loggedInUser.email) {
       targetUser = loggedInUser;
     } else {
-      const parentRecord = await Parent.findOne({ userId: loggedInUser._id })
-        .populate('childrenId');
-
-      const child = parentRecord?.childrenId.find(c => c.userId.email === email);
-      if (!child) {
+      const studentRecord = await Student.find({ parentId: loggedInUser._id }).populate('userId');
+      if (!studentRecord) {
         return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, 'Access denied to this profile');
+      }else {
+        let userRecord = await User.findOne({ email});
+        studentRecord[studentUser] = userRecord;
       }
-
-      targetUser = await User.findById(child.userId).select('-password -__v -createdAt -updatedAt');
+      sendSuccessResponse(res, HTTP_STATUS.OK, 'Profile retrieved successfully', {
+        studentRecord
+      });
     }
-  }
-
-  // --- TEACHER ---
-  else if (loggedInUser.role === USER_ROLES.TEACHER) {
+  }else if (loggedInUser.role === USER_ROLES.TEACHER) {
     targetUser = loggedInUser; // Only own profile for now
-  }
-
-  // --- STUDENT ---
-  else if (loggedInUser.role === USER_ROLES.STUDENT) {
+  }else if (loggedInUser.role === USER_ROLES.STUDENT) {
     targetUser = loggedInUser;
-  }
-
-  else {
+  }else {
     return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, 'Access denied');
   }
-
   // Convert numeric role → string for response
   sendSuccessResponse(res, HTTP_STATUS.OK, 'Profile retrieved successfully', {
     email: targetUser.email,
@@ -270,26 +288,17 @@ const updateProfile = asyncHandler(async (req, res) => {
     if (!targetUser) {
       return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Target user not found');
     }
-  }
-
-  // --- PARENT ---
-  else if (loggedInUser.role === USER_ROLES.PARENT) {
+  }else if (loggedInUser.role === USER_ROLES.PARENT) {
     if (!targetEmail || targetEmail === loggedInUser.email) {
       targetUser = loggedInUser;
     } else {
-      const parentRecord = await Parent.findOne({ userId: loggedInUser._id }).populate('childrenId');
-      const child = parentRecord?.childrenId.find(c => c.userId.email === targetEmail);
-
+      const studentRecord = await Student.findOne({ parentId: loggedInUser._id }).populate('UserId');
       if (!child) {
         return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, 'You can only update your own or your children’s profiles');
       }
-
-      targetUser = await User.findById(child.userId).select('-password -__v -createdAt -updatedAt');
+      targetUser = await User.findById(studentRecord.userId).select('-password -__v -createdAt -updatedAt');
     }
-  }
-
-  // --- TEACHER / STUDENT / Parent → own profile only ---
-  else {
+  }else {
     if (targetEmail && targetEmail !== loggedInUser.email) {
       return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, 'You can only update your own profile');
     }
@@ -504,38 +513,11 @@ const getAllUsers = asyncHandler(async(req, res) => {
         phone: s.userId.phone
       });
     });
-
-    // --- Parents grouped by class (via children) ---
-    const parents = await Parent.find().populate({
-      path: 'childrenId',
-      populate: { path: 'userId classId', select: 'firstName lastName email phone className' }
-    }).lean();
-
-    const parentsByClass = {};
-    parents.forEach(parent => {
-      parent.childrenId.forEach(child => {
-        const className = child.classId?.className || 'Unknown Class';
-        if (!parentsByClass[className]) parentsByClass[className] = [];
-
-        // Avoid duplicates: if same parent already in the array
-        if (!parentsByClass[className].some(p => p.parentId.toString() === parent.userId.toString())) {
-          parentsByClass[className].push({
-            parentId: parent.userId._id,
-            firstName: parent.userId.firstName,
-            lastName: parent.userId.lastName,
-            email: parent.userId.email,
-            phone: parent.userId.phone
-          });
-        }
-      });
-    });
-
     res.json({
       success: true,
       data: {
         teachers,
         studentsByClass,
-        parentsByClass
       }
     });
 

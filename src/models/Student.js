@@ -17,7 +17,8 @@ const studentSchema = new mongoose.Schema({
     ref: 'Parent' 
   }, 
   admissionDate: { 
-    type: Date 
+    type: Date,
+    required: true
   },
   leavingDate: { 
     type: Date 
