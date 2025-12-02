@@ -8,9 +8,10 @@ const studentSchema = new mongoose.Schema({
     unique: true 
   },
   classId: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'Class', 
-    required: true 
+     type: [{ 
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: 'Class' 
+    }],
   },
   parentId: { 
     type: mongoose.Schema.Types.ObjectId, 

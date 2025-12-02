@@ -13,7 +13,7 @@ const generateID = require('../utils/generateId');
 
 // Register a new user
 const register = asyncHandler(async (req, res) => {
-  const loggedInUser = await User.findOne({ email: req.user?.email });
+  const loggedInUser = req.user;
   if (!loggedInUser || loggedInUser.role !== USER_ROLES.ADMIN) {
     return sendErrorResponse(
       res,
@@ -62,7 +62,6 @@ const register = asyncHandler(async (req, res) => {
     requiredFields.push('DOJ');
   }
   if(roleNumber === USER_ROLES.STUDENT) {
-    requiredFields.push('classId');
     requiredFields.push('admissionDate');
     requiredFields.push('studentId');
   }
@@ -107,7 +106,7 @@ const register = asyncHandler(async (req, res) => {
   //if user is teacher
   if (roleNumber === USER_ROLES.TEACHER) {
     await Teacher.create({
-      userId: addedUser._id,
+      teacherId: addedUser._id,
       employeeId: sanitizeString(req.body.employeeId),
       experience: req.body.experience,
       DOJ: req.body.DOJ
@@ -273,7 +272,7 @@ const getProfile = asyncHandler(async (req, res) => {
 });
 
 // Update user profile
-const updateProfile = asyncHandler(async (req, res) => {
+const updateUser = asyncHandler(async (req, res) => {
   const loggedInUser = req.user;
   const { targetEmail, ...updateData } = req.body;
 
@@ -527,13 +526,145 @@ const getAllUsers = asyncHandler(async(req, res) => {
   }
 });
 
+const updateProfile = asyncHandler(async (req, res) => {
+  const targetUserIDParam = req.params.userId; 
+  const currentUser = req.user;
+  const updates = req.body;
+
+  // 1. Fetch Master User
+  const targetUser = await User.findOne({ userID: targetUserIDParam });
+
+  if (!targetUser) {
+    return res.status(404).json({
+      success: false,
+      message: 'User not found'
+    });
+  }
+
+  const targetRole = targetUser.role;
+  let updatedChildData = null;
+
+  // SCENARIO A: TARGET IS A STUDENT
+  if (targetRole === USER_ROLES.STUDENT) {
+    const studentDoc = await Student.findOne({ userId: targetUser._id });
+    if (!studentDoc) {
+      return res.status(404).json({ success: false, message: 'Student profile details not found' });
+    }
+    // FIX: Compare ObjectIDs for self check
+    const isAdmin = currentUser.role === USER_ROLES.ADMIN;
+    const isSelf = currentUser._id.toString() === targetUser._id.toString();
+    const isParent = currentUser.role === USER_ROLES.PARENT && 
+                     studentDoc.parentId && 
+                     studentDoc.parentId.toString() === currentUser._id.toString();
+
+    if (!isAdmin && !isSelf && !isParent) {
+      return res.status(403).json({ success: false, message: 'Not authorized to update this student profile' });
+    }
+    let allowedFields = [];
+    if (isAdmin) {
+      allowedFields = ['classId', 'parentId', 'admissionDate', 'leavingDate', 'emergencyContact', 'studentId'];
+    } else {
+      allowedFields = ['emergencyContact', 'leavingDate'];
+    }
+    allowedFields.forEach((field) => {
+      if (updates[field] !== undefined) {
+        studentDoc[field] = updates[field];
+      }
+    });
+    updatedChildData = await studentDoc.save();
+  } else if (targetRole === USER_ROLES.TEACHER) { // SCENARIO B: TARGET IS A TEACHER
+    const teacherDoc = await Teacher.findOne({ userId: targetUser._id });
+    if (!teacherDoc) {
+      return res.status(404).json({ success: false, message: 'Teacher profile details not found' });
+    }
+    const isAdmin = currentUser.role === USER_ROLES.ADMIN;
+    const isSelf = currentUser._id.toString() === targetUser._id.toString();
+
+    if (!isAdmin && !isSelf) {
+      return res.status(403).json({ success: false, message: 'Not authorized to update this teacher profile' });
+    }
+    let allowedFields = [];
+    if (isAdmin) {
+      allowedFields = ['employeeId', 'emergencyContact', 'resignationDate', 'DOJ', 'bio', 'experience']; 
+    } else {
+      allowedFields = ['bio', 'emergencyContact'];
+    }
+
+    allowedFields.forEach((field) => {
+      if (updates[field] !== undefined) {
+        teacherDoc[field] = updates[field];
+      }
+    });
+
+    updatedChildData = await teacherDoc.save();
+  }
+
+  // COMMON: UPDATE MASTER USER TABLE
+  const isAuthorizedMasterUpdate = currentUser.role === USER_ROLES.ADMIN || currentUser._id.toString() === targetUser._id.toString();
+  if (isAuthorizedMasterUpdate) {
+    const masterAllowedFields = ['firstName', 'lastName', 'phone', 'address', 'profileImage', 'gender', 'bloodGroup', 'dob'];
+    let masterUpdated = false;
+
+    // 1. Standard Fields
+    masterAllowedFields.forEach((field) => {
+      if (updates[field] !== undefined) {
+        targetUser[field] = updates[field];
+        masterUpdated = true;
+      }
+    });
+    // 2. Admin Extras
+    if (currentUser.role === USER_ROLES.ADMIN) {
+      if (updates.role !== undefined) {
+        const r = updates.role.toUpperCase();
+        const mappedRole = USER_ROLES[r];
+        if (!mappedRole) {
+          return res.status(400).json({ success: false, message: 'Invalid role provided' });
+        }
+        targetUser.role = mappedRole;
+        masterUpdated = true; 
+      }
+
+      if (updates.email !== undefined) {
+        targetUser.email = updates.email;
+        masterUpdated = true; 
+      }
+      if (updates.isActive !== undefined) {
+        targetUser.isActive = updates.isActive;
+        masterUpdated = true; 
+      }
+      if (updates.userID !== undefined) {
+        targetUser.userID = updates.userID;
+        masterUpdated = true; 
+      }
+    }
+    if (masterUpdated) {
+      await targetUser.save();
+    }
+  }
+
+  // FINAL RESPONSE
+  return res.status(200).json({
+    success: true,
+    message: 'Profile updated successfully',
+    user: {
+      userId: targetUser.userID,
+      firstName: targetUser.firstName,
+      lastName: targetUser.lastName,
+      email: targetUser.email,
+      role: targetUser.roleName,
+      commonDetails: targetUser,
+      specificDetails: updatedChildData 
+    }
+  });
+});
+
 module.exports = {
   register,
   login,
   logout,
   getProfile,
-  updateProfile,
   changePassword,
   deleteUser,
-  getAllUsers
+  getAllUsers,
+  updateProfile
 };

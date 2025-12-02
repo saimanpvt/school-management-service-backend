@@ -6,17 +6,17 @@ const { allowRoles } = require('../middlewares/roleMiddleware');
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants');
 const { asyncHandler } = require('../middlewares/asyncHandler');
 
-// ADMIN -> assign course (create or update assignment)
+// ADMIN -> add course
 router.post(
-  '/assign',
+  '/add',
   allowRoles([USER_ROLES.ADMIN]),
-  courseController.assignCourse
+  courseController.addCourse
 );
 
-// TEACHER -> update own course
+// TEACHER, ADMIN -> update own course
 router.put(
   '/:courseId',
-  allowRoles([USER_ROLES.TEACHER]),
+  allowRoles([USER_ROLES.TEACHER, USER_ROLES.ADMIN]),
   courseController.updateCourse
 );
 

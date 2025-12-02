@@ -1,4 +1,5 @@
 const Class = require('../models/Class');
+const Student = require('../models/Student');
 const { USER_ROLES } = require('../config/constants');
 
 // Generate unique 10 digit Class ID
@@ -38,7 +39,7 @@ exports.updateClass = async (req, res) => {
       return res.status(403).json({ message: "Only admins can update classes" });
     }
     const classId = req.params.id;
-    const updated = await Class.findByIdAndUpdate(classId, req.body, {
+    const updated = await Class.findOneAndUpdate({classId:classId}, req.body, {
       new: true,
       runValidators: true
     });
@@ -266,6 +267,68 @@ exports.getClassDetails = asyncHandler(async (req, res) => {
       createdAt: cls.createdAt,
       updatedAt: cls.updatedAt,
       courses: formattedCourses 
+    }
+  });
+});
+
+exports.enrollStudent = asyncHandler(async (req, res) => {
+  const { studentId, classId } = req.body; 
+  // Note: Expecting MongoDB _id for both studentId and classId
+
+  if (!studentId || !classId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide both Student ID and Class ID'
+    });
+  }
+
+  // 1. Verify the Class exists and is Active
+  const classDoc = await Class.findOne({classId: classId});
+
+  if (!classDoc) {
+    return res.status(404).json({
+      success: false,
+      message: 'Class not found'
+    });
+  }
+
+  // Based on your Enum: ['Ongoing', 'Completed', 'Inactive']
+  if (classDoc.classStatus !== 'Ongoing') {
+    return res.status(400).json({
+      success: false,
+      message: `Cannot enroll student. Class status is '${classDoc.classStatus}'`
+    });
+  }
+
+  // 2. Verify the Student exists
+  const studentDoc = await Student.findById({studentId: studentId});
+  if (!studentDoc) {
+    return res.status(404).json({
+      success: false,
+      message: 'Student not found'
+    });
+  }
+
+  // 3. Enroll Student (Using $addToSet to prevent duplicates)
+  // We update the Student document because that is where the relationship is stored.
+  const updatedStudent = await Student.findOneAndUpdate(
+    studentId,
+    { 
+      $addToSet: { classId: classId } 
+    },
+    { 
+      new: true,
+      runValidators: true 
+    }
+  ).populate('classId', 'className classCode'); 
+
+  return res.status(200).json({
+    success: true,
+    message: 'Student enrolled successfully',
+    data: {
+      studentId: updatedStudent.studentId,
+      name: updatedStudent.userId,
+      enrolledClasses: updatedStudent.classId
     }
   });
 });
