@@ -11,15 +11,13 @@ exports.addClass = async (req, res) => {
     if (req.user.role !== USER_ROLES.ADMIN) {
       return res.status(403).json({ message: "Only admins can create classes" });
     }
-
-    const { className, classCode, description, year } = req.body;
-
+    const { className, classCode, description, year, classType } = req.body;
     const classID = generateClassID();
-
     const newClass = await Class.create({
       classID,
       className,
       classCode,
+      classType,
       description,
       year
     });
@@ -39,9 +37,7 @@ exports.updateClass = async (req, res) => {
     if (req.user.role !== USER_ROLES.ADMIN) {
       return res.status(403).json({ message: "Only admins can update classes" });
     }
-
     const classId = req.params.id;
-
     const updated = await Class.findByIdAndUpdate(classId, req.body, {
       new: true,
       runValidators: true
@@ -50,12 +46,10 @@ exports.updateClass = async (req, res) => {
     if (!updated) {
       return res.status(404).json({ message: "Class not found" });
     }
-
     return res.json({
       success: true,
       class: updated
     });
-
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }
@@ -66,9 +60,10 @@ exports.deleteClass = async (req, res) => {
     if (req.user.role !== USER_ROLES.ADMIN) {
       return res.status(403).json({ message: "Only admins can delete classes" });
     }
-
-    const deleted = await Class.findByIdAndDelete(req.params.id);
-
+    const deleted = await Class.findByIdAndUpdate(req.params.id, {classStatus: "inActive"}, {
+      new: true,
+      runValidators: true
+    });
     if (!deleted) {
       return res.status(404).json({ message: "Class not found" });
     }
@@ -103,26 +98,174 @@ exports.getAllClasses = async (req, res) => {
   }
 };
 
-exports.getClassDetails = async (req, res) => {
-  try {
-    if (req.user.role !== USER_ROLES.ADMIN) {
-      return res.status(403).json({ message: "Only admins can view class details" });
-    }
+//Get Student Classes
+exports.getStudentClasses = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
 
-    const classData = await Class.findById(req.params.id)
-      .populate('students', 'firstName lastName rollNo')
-      .populate('courses', 'courseName teacherId');
+  // 1. Find student details
+  const student = await Student.findOne({ userId })
+    .select('classId admissionDate leavingDate');
 
-    if (!classData) {
-      return res.status(404).json({ message: "Class not found" });
-    }
-
-    return res.json({
-      success: true,
-      class: classData
-    });
-
-  } catch (err) {
-    return res.status(500).json({ message: err.message });
+  if (!student) {
+    return res.status(404).json({ success: false, message: "Student not found" });
   }
-};
+
+  // 2. Fetch class (current or past)
+  const classData = await Class.findById(student.classId).lean();
+
+  if (!classData) {
+    return res.status(404).json({ success: false, message: "Class not found" });
+  }
+
+  // 3. Fetch all courses assigned to this class
+  const courses = await Course.find({ classId: classData._id })
+    .populate('teacherId', 'firstName lastName email')
+    .lean();
+
+  // 4. For each course, fetch exams belonging to that course
+  const formattedCourses = await Promise.all(
+    courses.map(async (course) => {
+      const courseExams = await Exam.find({ course: course._id })
+        .populate('course', 'courseName courseCode')
+        .lean();
+
+      return {
+        Id: course._id,
+        courseCode: course.courseCode,
+        courseName: course.courseName,
+        description: course.description,
+        duration: course.duration,
+        academicYear: course.academicYear,
+        teacher: course.teacherId,
+        courseId: course.courseId,
+        isActive: course.isActive,
+
+       exams: courseExams.map(e => ({
+          examId: e._id,
+          examName: e.examName,
+          examType: e.examType,
+          course: e.course,                 
+          classId: e.classId,              
+          academicYear: e.academicYear,
+          totalMarks: e.totalMarks,
+          passingMarks: e.passingMarks,
+          examDate: e.examDate,
+          startTime: e.startTime,
+          endTime: e.endTime,
+          duration: e.duration,             
+          venue: e.venue,
+          instructions: e.instructions,
+
+          // Status/flags
+          isActive: e.isActive,
+          isCompleted: e.isCompleted,
+          resultsPublished: e.resultsPublished,
+
+          // Additional computed fields (if present in DB)
+          durationInHours: e.durationInHours, 
+        }))
+      };
+    })
+  );
+
+  // 5. Final Response Object
+  const response = {
+    success: true,
+    class: {
+      classId: classData._id,
+      classID: classData.classID,
+      className: classData.className,
+      classCode: classData.classCode,
+      classType: classData.classType,
+      year: classData.year,
+      currentStatus: student.leavingDate ? 'Past' : 'Current',
+
+      courses: formattedCourses
+    }
+  };
+
+  res.json(response);
+});
+
+exports.getClassDetails = asyncHandler(async (req, res) => {
+  const classId = req.params.id;
+
+  // 1. Fetch class details
+  const cls = await Class.findById(classId).lean();
+  if (!cls) {
+    return res.status(404).json({
+      success: false,
+      message: "Class not found"
+    });
+  }
+
+  // 2. Fetch courses associated with this class
+  const courses = await Course.find({ classId })
+    .populate('teacherId', 'firstName lastName email')
+    .lean();
+
+  // 3. Fetch exams
+  const formattedCourses = await Promise.all(
+    courses.map(async (course) => {
+      const exams = await Exam.find({ course: course._id })
+        .populate('course', 'courseName courseCode')
+        .lean();
+
+      return {
+        courseId: course._id,
+        courseCode: course.courseCode,
+        courseName: course.courseName,
+        description: course.description,
+        duration: course.duration,
+        academicYear: course.academicYear,
+        isActive: course.isActive,
+        teacher: {
+          teacherId: course.teacherId?._id,
+          firstName: course.teacherId?.firstName,
+          lastName: course.teacherId?.lastName,
+          email: course.teacherId?.email
+        },
+
+        // FIX: Changed 'exam' to 'e' in the argument, or change 'e' to 'exam' inside
+        exams: exams.map((e) => ({
+          examId: e._id,
+          examName: e.examName,
+          examType: e.examType,
+          course: e.course,                 
+          classId: e.classId,              
+          academicYear: e.academicYear,
+          totalMarks: e.totalMarks,
+          passingMarks: e.passingMarks,
+          examDate: e.examDate,
+          startTime: e.startTime,
+          endTime: e.endTime,
+          duration: e.duration,             
+          venue: e.venue,
+          instructions: e.instructions,
+          isActive: e.isActive,
+          isCompleted: e.isCompleted,
+          resultsPublished: e.resultsPublished,
+          durationInHours: e.durationInHours, 
+        }))
+      };
+    })
+  );
+
+  // 4. Final API Response
+  return res.json({
+    success: true,
+    class: {
+      classId: cls._id,
+      classID: cls.classID,
+      className: cls.className,
+      classCode: cls.classCode,
+      classType: cls.classType,
+      classStatus: cls.classStatus,
+      year: cls.year,
+      description: cls.description,
+      createdAt: cls.createdAt,
+      updatedAt: cls.updatedAt,
+      courses: formattedCourses 
+    }
+  });
+});
