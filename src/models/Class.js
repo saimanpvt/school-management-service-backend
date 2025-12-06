@@ -14,6 +14,29 @@ const classSchema = new mongoose.Schema({
     trim: true, 
     maxlength: [50, 'Class name cannot exceed 50 characters']
   },
+  classType: {
+    type: String,
+    enum: ['Permanent', 'Temprory'],
+    default: 'Permanent'
+  },
+  classStatus: {
+    type: String,
+    enum: ['Ongoing', 'Completed', 'Inactive'],
+    default: 'Active'
+  },
+  classCode: {
+    type: String,
+    required: [true, 'Class Code is required'],
+    unique: true,
+    trim: true,
+    uppercase: true,
+    maxlength: [20, 'Class code cannot exceed 20 characters']
+  },
+  description: {
+    type: String,
+    trim: true,
+    maxlength: [300, 'Description cannot exceed 300 characters']
+  },
   year: { 
     type: Number 
   }
@@ -39,6 +62,7 @@ classSchema.virtual('courses', {
 
 // Indexes
 classSchema.index({ classID: 1 });
+classSchema.index({ classCode: 1 });
 classSchema.index({ className: 1, year: 1 });
 
 module.exports = mongoose.model('Class', classSchema);

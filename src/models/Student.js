@@ -8,20 +8,22 @@ const studentSchema = new mongoose.Schema({
     unique: true 
   },
   classId: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'Class', 
-    required: true 
+     type: [{ 
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: 'Class' 
+    }],
   },
   parentId: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'Parent' 
-  }, // optional if parent exists
+  }, 
   admissionDate: { 
-    type: Date 
+    type: Date,
+    required: true
   },
   leavingDate: { 
     type: Date 
-  }, // optional
+  }, 
   emergencyContact: { 
     type: String, 
     trim: true, 

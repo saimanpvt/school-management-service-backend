@@ -1,168 +1,255 @@
 const Exam = require('../models/Exam');
-const User = require('../models/User');
 const Course = require('../models/Course');
-const { asyncHandler } = require('../middlewares/errorMiddleware');
-const { sendSuccessResponse, sendErrorResponse, sendPaginatedResponse } = require('../utils/response');
-const { HTTP_STATUS, USER_ROLES } = require('../config/constants');
-const { validateRequiredFields, isValidObjectId, validateAcademicYear } = require('../utils/validation');
-const { getPaginationOptions, getPaginationMeta, getSortOptions } = require('../utils/pagination');
+const Student = require('../models/Student');
+const { USER_ROLES } = require('../config/constants');
+const asyncHandler = require('express-async-handler'); // Recommended wrapper
 
-/**
- * Get exam record list (Common - accessible by all roles)
- */
-const getExamRecordList = asyncHandler(async (req, res) => {
-  const paginationOptions = getPaginationOptions(req.query);
-  const sortOptions = getSortOptions(req.query, ['examDate', 'examName', 'examType', 'createdAt']);
+// ---------------------------------------------------
+// GET Exam List - role-based
+// ---------------------------------------------------
+exports.getExamRecordList = asyncHandler(async (req, res) => {
+  const user = req.user;
 
-  const filters = { isActive: true };
+  // 1. ADMIN → All active exams
+  if (user.role === USER_ROLES.ADMIN) {
+    const allExams = await Exam.find()
+      .populate('course', 'courseName courseCode')
+      .sort({ examDate: 1 });
+    return res.json({ success: true, exams: allExams });
+  }
+
+  // 2. TEACHER → Exams for their specific courses
+  if (user.role === USER_ROLES.TEACHER) {
+    // Find courses taught by this teacher
+    const teacherCourses = await Course.find({ teacherId: user._id }).distinct('_id');
+
+    const exams = await Exam.find({
+      course: { $in: teacherCourses }, // Match exams belonging to those courses
+      isActive: true
+    })
+    .populate('course', 'courseName courseCode')
+    .sort({ examDate: 1 });
+
+    return res.json({ success: true, exams });
+  }
+
+  // 3. STUDENT → Exams for courses in their class(es)
+  if (user.role === USER_ROLES.STUDENT) {
+    const student = await Student.findOne({ userId: user._id });
+    if (!student) {
+      return res.status(404).json({ success: false, message: 'Student record not found' });
+    }
+
+    // A. Find all courses assigned to the student's class(es)
+    // Note: student.classId is an Array now
+    const studentCourses = await Course.find({ 
+      classId: { $in: student.classId } 
+    }).distinct('_id');
+
+    // B. Find exams for those courses
+    const exams = await Exam.find({
+      course: { $in: studentCourses },
+      isActive: true
+    })
+    .populate('course', 'courseName courseCode')
+    .sort({ examDate: 1 });
+
+    return res.json({ success: true, exams });
+  }
+
+  // 4. PARENT → Exams for their children's classes
+  if (user.role === USER_ROLES.PARENT) {
+    // Find all children
+    const children = await Student.find({ parentId: user._id });
+    if (!children.length) {
+      return res.status(404).json({ success: false, message: "No children found" });
+    }
+
+    // Collect all unique Class IDs from all children
+    // Flatten array of arrays if children have multiple classes
+    const allClassIds = children.flatMap(child => child.classId);
+
+    // A. Find courses for these classes
+    const childCourses = await Course.find({ 
+      classId: { $in: allClassIds } 
+    }).distinct('_id');
+
+    // B. Find exams
+    const exams = await Exam.find({ 
+      course: { $in: childCourses }, 
+      isActive: true 
+    })
+    .populate('course', 'courseName courseCode')
+    .sort({ examDate: 1 });
+
+    return res.json({ success: true, exams });
+  }
+
+  return res.status(403).json({ success: false, message: "Forbidden" });
+});
+
+// ---------------------------------------------------
+// GET single exam - role-protected
+// ---------------------------------------------------
+exports.getExamRecord = asyncHandler(async (req, res) => {
+  const user = req.user;
   
-  if (req.query.course) filters.course = req.query.course;
-  if (req.query.teacher) filters.teacher = req.query.teacher;
-  if (req.query.examType) filters.examType = req.query.examType;
-  if (req.query.academicYear) filters.academicYear = req.query.academicYear;
-  if (req.query.semester) filters.semester = req.query.semester;
+  // Populate course immediately to access classId/teacherId logic
+  const exam = await Exam.findById(req.params.id).populate('course');
 
-  const exams = await Exam.find(filters)
-    .populate([
-      { path: 'course', select: 'courseName courseCode department' },
-      { path: 'teacher', select: 'firstName lastName email' }
-    ])
-    .sort(sortOptions)
-    .skip(paginationOptions.skip)
-    .limit(paginationOptions.limit);
+  if (!exam) return res.status(404).json({ message: 'Exam not found' });
 
-  const total = await Exam.countDocuments(filters);
-  const paginationMeta = getPaginationMeta(total, paginationOptions.page, paginationOptions.limit);
-
-  sendPaginatedResponse(res, HTTP_STATUS.OK, 'Exams retrieved successfully', exams, paginationMeta);
-});
-
-/**
- * Get single exam record (Common - accessible by all roles)
- */
-const getExamRecord = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-
-  if (!isValidObjectId(id)) {
-    return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, 'Invalid exam ID');
+  // 1. ADMIN
+  if (user.role === USER_ROLES.ADMIN) {
+    return res.json({ success: true, exam });
   }
 
-  const exam = await Exam.findById(id)
-    .populate([
-      { path: 'course', select: 'courseName courseCode department' },
-      { path: 'teacher', select: 'firstName lastName email phone' }
-    ]);
-
-  if (!exam) {
-    return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Exam not found');
+  // 2. TEACHER
+  if (user.role === USER_ROLES.TEACHER) {
+    // Check if teacher owns the course
+    if (!exam.course || exam.course.teacherId.toString() !== user._id.toString()) {
+      return res.status(403).json({ message: "You don't own the course for this exam" });
+    }
+    return res.json({ success: true, exam });
   }
 
-  sendSuccessResponse(res, HTTP_STATUS.OK, 'Exam retrieved successfully', exam);
+  // 3. STUDENT
+  if (user.role === USER_ROLES.STUDENT) {
+    const student = await Student.findOne({ userId: user._id });
+    
+    // Check if the exam's course belongs to one of the student's classes
+    // exam.course.classId vs student.classId (Array)
+    const isClassMatch = student.classId.some(
+      (cid) => cid.toString() === exam.course.classId.toString()
+    );
+
+    if (!student || !isClassMatch) {
+      return res.status(403).json({ message: "Not allowed to view this exam" });
+    }
+    return res.json({ success: true, exam });
+  }
+
+  // 4. PARENT
+  if (user.role === USER_ROLES.PARENT) {
+    // Find if ANY child belongs to the class of this exam
+    const child = await Student.findOne({ 
+      parentId: user._id, 
+      classId: exam.course.classId // Match the class of the course
+    });
+
+    if (!child) return res.status(403).json({ message: "Not allowed" });
+    return res.json({ success: true, exam });
+  }
+
+  return res.status(403).json({ message: "Forbidden" });
 });
 
-/**
- * Add exam record (Student + Teacher)
- */
-const addExamRecord = asyncHandler(async (req, res) => {
-  const {
-    examName,
-    examType,
-    course,
-    subject,
-    teacher,
-    totalMarks,
-    passingMarks,
-    examDate,
-    startTime,
-    endTime,
-    duration,
-    venue,
-    instructions,
-    academicYear,
-    semester
+// ---------------------------------------------------
+// ADD exam - Teacher only (Admin can be added if needed)
+// ---------------------------------------------------
+exports.addExamRecord = asyncHandler(async (req, res) => {
+  const teacherId = req.user._id;
+  const userRole = req.user.role;
+  const { 
+    examName, examType, courseId, totalMarks, 
+    passingMarks, examDate, startTime, duration, venue, instructions 
   } = req.body;
 
-  const requiredFields = ['examName', 'examType', 'course', 'subject', 'teacher', 'totalMarks', 'passingMarks', 'examDate', 'startTime', 'endTime', 'duration', 'venue', 'academicYear', 'semester'];
-  const fieldValidation = validateRequiredFields(req.body, requiredFields);
-  
-  if (!fieldValidation.isValid) {
-    return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, 'Validation failed', fieldValidation.errors);
+  // 1. Check Course
+  const courseDoc = await Course.findById(courseId);
+  if (!courseDoc) return res.status(404).json({ message: "Course not found" });
+
+  // 2. Verify Ownership (If Teacher)
+  if (userRole === USER_ROLES.TEACHER) {
+    if (courseDoc.teacherId.toString() !== teacherId.toString()) {
+      return res.status(403).json({ message: "You don't own this course" });
+    }
+  } else if (userRole !== USER_ROLES.ADMIN) {
+     return res.status(403).json({ message: "Forbidden" });
   }
 
-  if (!isValidObjectId(course)) {
-    return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, 'Invalid course ID');
-  }
-
-  if (!isValidObjectId(teacher)) {
-    return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, 'Invalid teacher ID');
-  }
-
-  const courseDoc = await Course.findById(course);
-  if (!courseDoc) {
-    return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Course not found');
-  }
-
-  const teacherDoc = await User.findById(teacher);
-  if (!teacherDoc || teacherDoc.role !== USER_ROLES.TEACHER) {
-    return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, 'Teacher not found or invalid role');
-  }
-
+  // 3. Create Exam
+  // We DO NOT save classId or academicYear (they are in Course)
   const exam = await Exam.create({
     examName,
     examType,
-    course,
-    subject,
-    teacher,
+    course: courseId, // Map incoming ID to schema field
     totalMarks,
     passingMarks,
     examDate,
     startTime,
-    endTime,
     duration,
     venue,
     instructions,
-    academicYear,
-    semester
+    isActive: true
   });
 
-  await exam.populate([
-    { path: 'course', select: 'courseName courseCode department' },
-    { path: 'teacher', select: 'firstName lastName email' }
-  ]);
-
-  sendSuccessResponse(res, HTTP_STATUS.CREATED, 'Exam added successfully', exam);
+  return res.status(201).json({ success: true, exam });
 });
 
-/**
- * Update exam record (Student + Teacher)
- */
-const updateExamRecord = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const updateData = req.body;
+// ---------------------------------------------------
+// UPDATE exam - Teacher / Admin
+// ---------------------------------------------------
+exports.updateExamRecord = asyncHandler(async (req, res) => {
+  const teacherId = req.user._id;
+  const userRole = req.user.role;
+  
+  // Find exam and populate course to check ownership
+  let exam = await Exam.findById(req.params.id).populate('course');
+  if (!exam) return res.status(404).json({ message: "Exam not found" });
 
-  if (!isValidObjectId(id)) {
-    return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, 'Invalid exam ID');
+  // 1. Verify Ownership
+  if (userRole === USER_ROLES.TEACHER) {
+    if (!exam.course || exam.course.teacherId.toString() !== teacherId.toString()) {
+      return res.status(403).json({ message: "You don't own this course" });
+    }
+  } else if (userRole !== USER_ROLES.ADMIN) {
+     return res.status(403).json({ message: "Forbidden" });
   }
 
-  const exam = await Exam.findByIdAndUpdate(
-    id,
-    updateData,
-    { new: true, runValidators: true }
-  ).populate([
-    { path: 'course', select: 'courseName courseCode department' },
-    { path: 'teacher', select: 'firstName lastName email' }
-  ]);
+  // 2. Handle specific fields
+  const updates = req.body;
+  const allowedUpdates = [
+    'examName', 'examType', 'totalMarks', 'passingMarks', 
+    'examDate', 'startTime', 'duration', 'venue', 'instructions', 
+    'isActive', 'resultsPublished'
+  ];
 
-  if (!exam) {
-    return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Exam not found');
+  allowedUpdates.forEach((field) => {
+    if (updates[field] !== undefined) {
+      exam[field] = updates[field];
+    }
+  });
+
+  // Handle Course Change (Optional - usually unusual for an existing exam)
+  if (updates.courseId) {
+     // Validate new course ownership logic here if needed
+     exam.course = updates.courseId;
   }
 
-  sendSuccessResponse(res, HTTP_STATUS.OK, 'Exam updated successfully', exam);
+  await exam.save();
+  res.json({ success: true, exam });
 });
 
-module.exports = {
-  getExamRecordList,
-  getExamRecord,
-  addExamRecord,
-  updateExamRecord
-};
+// ---------------------------------------------------
+// DELETE exam - Teacher / Admin
+// ---------------------------------------------------
+exports.deleteExamRecord = asyncHandler(async (req, res) => {
+  const teacherId = req.user._id;
+  const userRole = req.user.role;
+
+  const exam = await Exam.findById(req.params.id).populate('course');
+  if (!exam) return res.status(404).json({ message: "Exam not found" });
+
+  // 1. Verify Ownership
+  if (userRole === USER_ROLES.TEACHER) {
+    if (!exam.course || exam.course.teacherId.toString() !== teacherId.toString()) {
+      return res.status(403).json({ message: "You don't own this course" });
+    }
+  } else if (userRole !== USER_ROLES.ADMIN) {
+     return res.status(403).json({ message: "Forbidden" });
+  }
+
+  await exam.deleteOne();
+  res.json({ success: true, message: "Exam deleted" });
+});

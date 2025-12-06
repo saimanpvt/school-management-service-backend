@@ -3,28 +3,30 @@ const router = express.Router();
 
 const courseController = require('../controllers/courseController');
 const { allowRoles } = require('../middlewares/roleMiddleware');
-const { verifyTeacherOwnership } = require('../middlewares/verifyTeacherOwnership');
-const { HTTP_STATUS, USER_ROLES } = require('../config/constants');
+const {USER_ROLES } = require('../config/constants');
 const { asyncHandler } = require('../middlewares/asyncHandler');
+const authMiddleware = require('../middlewares/authMiddleware');
+// Apply authentication to all routes
+router.use(authMiddleware);
 
-// ADMIN -> assign course (create or update assignment)
+// ADMIN -> add course
 router.post(
-  '/assign',
+  '/add',
   allowRoles([USER_ROLES.ADMIN]),
-  courseController.assignCourse
+  asyncHandler(courseController.addCourse)
 );
 
-// TEACHER -> update own course
+// TEACHER, ADMIN -> update own course
 router.put(
   '/:courseId',
-  allowRoles([USER_ROLES.TEACHER]),
+  allowRoles([USER_ROLES.TEACHER, USER_ROLES.ADMIN]),
   courseController.updateCourse
 );
 
-// TEACHER -> delete own course
+// ADMIN -> delete course
 router.delete(
   '/:courseId',
-  allowRoles([USER_ROLES.TEACHER]),
+  allowRoles([USER_ROLES.ADMIN]),
   courseController.deleteCourse
 );
 
