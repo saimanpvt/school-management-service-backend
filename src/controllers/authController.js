@@ -8,7 +8,6 @@ const Teacher = require('../models/Teacher');
 const Student = require('../models/Student');
 const Course = require('../models/Course');
 const jwt = require('jsonwebtoken');
-const generateID = require('../utils/generateId');
 
 
 // Register a new user
@@ -413,13 +412,15 @@ const getAllUsers = asyncHandler(async(req, res) => {
     students.forEach(s => {
       const className = s.classId?.className || 'Unknown Class';
       if (!studentsByClass[className]) studentsByClass[className] = [];
-      studentsByClass[className].push({
-        studentId: s.userId._id,
-        firstName: s.userId.firstName,
-        lastName: s.userId.lastName,
-        email: s.userId.email,
-        phone: s.userId.phone
-      });
+      if (s.userId) {
+        studentsByClass[className].push({
+          studentId: s.userId._id,
+          firstName: s.userId.firstName,
+          lastName: s.userId.lastName,
+          email: s.userId.email,
+          phone: s.userId.phone
+        });
+      }
     });
     res.json({
       success: true,

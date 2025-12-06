@@ -3,14 +3,17 @@ const router = express.Router();
 
 const courseController = require('../controllers/courseController');
 const { allowRoles } = require('../middlewares/roleMiddleware');
-const { HTTP_STATUS, USER_ROLES } = require('../config/constants');
+const {USER_ROLES } = require('../config/constants');
 const { asyncHandler } = require('../middlewares/asyncHandler');
+const authMiddleware = require('../middlewares/authMiddleware');
+// Apply authentication to all routes
+router.use(authMiddleware);
 
 // ADMIN -> add course
 router.post(
   '/add',
   allowRoles([USER_ROLES.ADMIN]),
-  courseController.addCourse
+  asyncHandler(courseController.addCourse)
 );
 
 // TEACHER, ADMIN -> update own course

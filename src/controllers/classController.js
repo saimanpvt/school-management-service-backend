@@ -1,6 +1,9 @@
 const Class = require('../models/Class');
 const Student = require('../models/Student');
+const Course = require('../models/Course');
+const Exam = require('../models/Exam');
 const { USER_ROLES } = require('../config/constants');
+const { asyncHandler } = require('../middlewares/asyncHandler');
 
 // Generate unique 10 digit Class ID
 const generateClassID = () => {

@@ -95,7 +95,7 @@ app.use('/api/marks', marksRoutes);
 app.use('/api/exams', examRoutes);
 app.use('/api/references', referenceRoutes);
 app.use('/api/fees', feeRoutes);
-app.use('/api/fees', classRoutes);
+app.use('/api/classes', classRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {

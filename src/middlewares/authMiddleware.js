@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const { HTTP_STATUS, MESSAGES } = require('../config/constants');
+const { HTTP_STATUS, MESSAGES, ROLE_NAMES } = require('../config/constants');
 
 const authMiddleware = async (req, res, next) => {
   try {
