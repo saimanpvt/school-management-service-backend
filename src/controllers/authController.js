@@ -142,6 +142,26 @@ const register = asyncHandler(async (req, res) => {
     })
     enrolmentDeatils = enrollStudent(req.body.classId, addedUser._id);
   }
+
+  //If user is parent
+  if (roleNumber === USER_ROLES.TEACHER) {
+    let student = await Student.findOne({ studentId: req.body.childrenId });
+    if (!student) {
+      return sendErrorResponse(
+        res,
+        HTTP_STATUS.NOT_FOUND,
+        'No student found with the provided childrenId'
+      );
+    }
+    student = await Student.findByIdAndUpdate({ _id: student._id }, { parentId: addedUser._id });
+    if (!student) {
+      return sendErrorResponse(
+        res,
+        HTTP_STATUS.INTERNAL_SERVER_ERROR,
+        'Failed to link parent with student'
+      );
+    }
+  }
   // Response
   sendSuccessResponse(res, HTTP_STATUS.CREATED, 'User registered successfully', {
     _id: addedUser._id,

@@ -14,8 +14,9 @@ const studentSchema = new mongoose.Schema({
     }],
   },
   parentId: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'Parent' 
+   type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: false
   }, 
   admissionDate: { 
     type: Date,
