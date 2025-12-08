@@ -21,7 +21,7 @@ const classSchema = new mongoose.Schema({
   },
   classStatus: {
     type: String,
-    enum: ['Ongoing', 'Completed', 'Inactive'],
+    enum: ['Active', 'Completed', 'Inactive'],
     default: 'Active'
   },
   classCode: {

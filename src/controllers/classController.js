@@ -87,16 +87,16 @@ exports.getAllClasses = async (req, res) => {
     if (req.user.role !== USER_ROLES.ADMIN) {
       return res.status(403).json({ message: "Only admins can view class list" });
     }
-
-    const classes = await Class.find()
-      .populate('students', 'firstName lastName rollNo')
-      .populate('courses', 'courseName teacherId');
-
+    const OngClasses = await Class.find({ classStatus: "Active" });
+    const CompClasses = await Class.find({ classStatus: "Completed" });
+    const InactiveClasses = await Class.find({ classStatus: "Inactive" });
+    
     return res.json({
       success: true,
-      classes
+      ongoing : OngClasses,
+      inactive : InactiveClasses,
+      completed : CompClasses
     });
-
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }
@@ -108,7 +108,7 @@ exports.getStudentClasses = asyncHandler(async (req, res) => {
 
   // 1. Find student details
   const student = await Student.findOne({ userId })
-    .select('classId admissionDate leavingDate');
+    .select('classId');
 
   if (!student) {
     return res.status(404).json({ success: false, message: "Student not found" });
@@ -274,42 +274,40 @@ exports.getClassDetails = asyncHandler(async (req, res) => {
   });
 });
 
-exports.enrollStudent = asyncHandler(async (req, res) => {
-  const { studentId, classId } = req.body; 
-  // Note: Expecting MongoDB _id for both studentId and classId
+exports.enrollStudent = asyncHandler(async (studentId, classId) => {
 
   if (!studentId || !classId) {
-    return res.status(400).json({
+    return {
       success: false,
       message: 'Please provide both Student ID and Class ID'
-    });
+    };
   }
 
   // 1. Verify the Class exists and is Active
   const classDoc = await Class.findOne({classId: classId});
 
   if (!classDoc) {
-    return res.status(404).json({
+    return {
       success: false,
       message: 'Class not found'
-    });
+    };
   }
 
   // Based on your Enum: ['Ongoing', 'Completed', 'Inactive']
-  if (classDoc.classStatus !== 'Ongoing') {
-    return res.status(400).json({
+  if (classDoc.classStatus !== 'Active') {
+    return {
       success: false,
       message: `Cannot enroll student. Class status is '${classDoc.classStatus}'`
-    });
+    };
   }
 
   // 2. Verify the Student exists
   const studentDoc = await Student.findById({studentId: studentId});
   if (!studentDoc) {
-    return res.status(404).json({
+    return {
       success: false,
       message: 'Student not found'
-    });
+    };
   }
 
   // 3. Enroll Student (Using $addToSet to prevent duplicates)
@@ -325,7 +323,7 @@ exports.enrollStudent = asyncHandler(async (req, res) => {
     }
   ).populate('classId', 'className classCode'); 
 
-  return res.status(200).json({
+  return {
     success: true,
     message: 'Student enrolled successfully',
     data: {
@@ -333,5 +331,24 @@ exports.enrollStudent = asyncHandler(async (req, res) => {
       name: updatedStudent.userId,
       enrolledClasses: updatedStudent.classId
     }
-  });
+  }
+});
+
+exports.studentAdmission = asyncHandler(async (req, res) => {
+  const { studentId, classId } = req.query; 
+  const result = await exports.enrollStudent(studentId, classId);
+
+  if (!result.success) {
+    return res.status(400).json({
+      success: false,
+      message: result.message
+    });
+  }
+  if (result.success) {
+    return res.status(200).json({
+      success: true,
+      message: result.message,
+      data: result.data
+    });
+  } 
 });

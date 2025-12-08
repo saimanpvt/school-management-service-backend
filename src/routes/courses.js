@@ -34,7 +34,7 @@ router.delete(
 router.get(
   '/',
   allowRoles([USER_ROLES.ADMIN, USER_ROLES.TEACHER, USER_ROLES.STUDENT, USER_ROLES.PARENT]),
-  courseController.viewCourses
+  courseController.getCourseList
 );
 
 // VIEW single course
@@ -42,6 +42,27 @@ router.get(
   '/:courseId',
   allowRoles([USER_ROLES.ADMIN, USER_ROLES.TEACHER, USER_ROLES.STUDENT, USER_ROLES.PARENT]),
   courseController.viewCourseById
+);
+
+// VIEW courses (list) - Admin, Teacher, Student, Parent
+router.get(
+  '/teacher/:teacherId',
+  allowRoles([USER_ROLES.TEACHER]),
+  courseController.getCoursesByTeacher
+);
+
+// VIEW courses (list) - Admin, Teacher, Student, Parent
+router.get(
+  '/student/:studentId',
+  allowRoles([USER_ROLES.STUDENT, USER_ROLES.PARENT]),
+  courseController.getCoursesByStudent
+);
+
+// VIEW courses (list) - Admin, Teacher, Student, Parent
+router.get(
+  '/class/:classId',
+  allowRoles([USER_ROLES.STUDENT, USER_ROLES.PARENT]),
+  courseController.getCoursesByClass
 );
 
 module.exports = router;

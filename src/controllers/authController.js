@@ -9,6 +9,22 @@ const Student = require('../models/Student');
 const Course = require('../models/Course');
 const jwt = require('jsonwebtoken');
 
+// Helper to calculate "Time with Us"
+const calculateTimeWithUs = (date) => {
+  if (!date) return 'N/A';
+  const start = new Date(date);
+  const now = new Date();
+  
+  let years = now.getFullYear() - start.getFullYear();
+  let months = now.getMonth() - start.getMonth();
+
+  if (months < 0) {
+    years--;
+    months += 12;
+  }
+  return `${years} year(s), ${months} month(s)`;
+};
+
 
 // Register a new user
 const register = asyncHandler(async (req, res) => {
@@ -63,6 +79,7 @@ const register = asyncHandler(async (req, res) => {
   if(roleNumber === USER_ROLES.STUDENT) {
     requiredFields.push('admissionDate');
     requiredFields.push('studentId');
+    requiredFields.push('classId');
   }
   if(roleNumber === USER_ROLES.PARENT) {
     requiredFields.push('childrenId');
@@ -112,6 +129,7 @@ const register = asyncHandler(async (req, res) => {
     })
   }
    //if user is student
+   let enrolmentDeatils = {};
   if (roleNumber === USER_ROLES.STUDENT) {
     await Student.create({
       userId: addedUser._id,
@@ -119,6 +137,7 @@ const register = asyncHandler(async (req, res) => {
       admissionDate: req.body.admissionDate,
       studentId: sanitizeString(req.body.studentId),
     })
+    enrolmentDeatils = enrollStudent(req.body.classId, addedUser._id);
   }
   // Response
   sendSuccessResponse(res, HTTP_STATUS.CREATED, 'User registered successfully', {
@@ -395,45 +414,72 @@ const deleteUser = asyncHandler(async (req, res) => {
   return sendSuccessResponse(res, HTTP_STATUS.OK, "User and related data deleted successfully");
 });
 
-const getAllUsers = asyncHandler(async(req, res) => {
-  try {
-    // --- Teachers (random list) ---
-    const teachers = await User.find({ role: USER_ROLES.TEACHER })
-      .select('-password -__v')
-      .lean();
 
-    // --- Students grouped by class ---
+// @route   GET /api/users/list (Admin Only)
+const getUserList = asyncHandler(async (req, res) => {
+  const { role } = req.query;
+  console.log("Requested role:", role);
+  let responseData = {};
+
+  // 1. FETCH STUDENTS
+  if (!role || role === 'Student') {
+    // Fetch students and populate necessary references
     const students = await Student.find()
-      .populate('userId', 'firstName lastName email phone')
-      .populate('classId', 'className')
+      .populate('userId', 'firstName lastName userID email') 
+      .populate('classId', 'classCode className')           
+      .populate({
+        path: 'parentId',
+        populate: { path: 'userId', select: 'userID firstName lastName' } 
+      })
       .lean();
+      console.log("Student :", await Student.find().select("userId classId"));
 
-    const studentsByClass = {};
-    students.forEach(s => {
-      const className = s.classId?.className || 'Unknown Class';
-      if (!studentsByClass[className]) studentsByClass[className] = [];
-      if (s.userId) {
-        studentsByClass[className].push({
-          studentId: s.userId._id,
-          firstName: s.userId.firstName,
-          lastName: s.userId.lastName,
-          email: s.userId.email,
-          phone: s.userId.phone
-        });
-      }
-    });
-    res.json({
-      success: true,
-      data: {
-        teachers,
-        studentsByClass,
-      }
-    });
+    const formattedStudents = students.map(std => {
+      if (!std.userId) return null; 
+      return {
+        userId: std.userId, 
+        userRefId: std.userId.userID,
+        fullName: `${std.userId.firstName} ${std.userId.lastName}`,
+        classes: std.classId.map(c => ({ 
+          name: c.className, 
+          code: c.classCode 
+        })),
+        admissionDate: std.admissionDate,
+        timeWithUs: calculateTimeWithUs(std.admissionDate),
+        parentUserId: std.parentId?.userId?.userID || 'N/A',
+        parentName: std.parentId?.userId ? `${std.parentId.userId.firstName} ${std.parentId.userId.lastName}` : 'N/A'
+      };
+    }).filter(Boolean);
 
-  } catch (err) {
-    console.error("Error fetching users for admin:", err);
-    res.status(500).json({ success: false, message: "Server error" });
+    if (role === 'Student') return res.json({ success: true, count: formattedStudents.length, data: formattedStudents });
+    responseData.students = formattedStudents;
   }
+
+  // 2. FETCH TEACHERS
+  if (!role || role === 'Teacher') {
+    const teachers = await Teacher.find()
+      .populate('teacherId', 'firstName lastName userID email')
+      .lean();
+    const formattedTeachers = teachers.map(tch => {
+      if (!tch.userId) return null;
+      return {
+        dbId: tch._id,
+        userId: tch.teacherId || tch.userId.userID,
+        fullName: `${tch.userId.firstName} ${tch.userId.lastName}`,
+        experience: tch.experience || 'Not Specified',
+        empId: tch.employeeId || 'N/A'
+      };
+    }).filter(Boolean);
+
+    if (role === 'Teacher') return res.json({ success: true, count: formattedTeachers.length, data: formattedTeachers });
+    responseData.teachers = formattedTeachers;
+  }
+
+  // 3. RETURN BOTH (if no role specified)
+  return res.json({
+    success: true,
+    data: responseData
+  });
 });
 
 const updateProfile = asyncHandler(async (req, res) => {
@@ -575,6 +621,6 @@ module.exports = {
   getProfile,
   changePassword,
   deleteUser,
-  getAllUsers,
+  getUserList,
   updateProfile
 };

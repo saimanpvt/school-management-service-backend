@@ -16,7 +16,7 @@ router.put('/change-password', authController.changePassword);
 router.delete('/delete/:userId', authController.deleteUser);
 
 //All user list for admin
-router.get('/users', authController.getAllUsers);
+router.get('/users', authController.getUserList);
 
 //For users : Teacher, Student, Parent 
 router.put('/update/:userId', authController.updateProfile);

@@ -22,4 +22,6 @@ router.get('/', allowRoles([USER_ROLES.ADMIN]), classController.getAllClasses);
 // GET class details with students + courses
 router.get('/:id', allowRoles([USER_ROLES.ADMIN]), classController.getClassDetails);
 
+router.get('/enroll', allowRoles([USER_ROLES.ADMIN]), classController.studentAdmission);
+
 module.exports = router;

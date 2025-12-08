@@ -176,7 +176,7 @@ exports.deleteCourse = asyncHandler(async (req, res) => {
  * Student -> courses where classId === student.classId
  * Parent -> courses where classId is any of their childrens' classId
  */
-exports.viewCourses = asyncHandler(async (req, res) => {
+exports.getCourseList = asyncHandler(async (req, res) => {
   const loggedInUser = req.user;
   let courses = [];
 
@@ -184,32 +184,6 @@ exports.viewCourses = asyncHandler(async (req, res) => {
     case USER_ROLES.ADMIN:
       courses = await Course.find().populate('teacherId classId');
       break;
-
-    case USER_ROLES.TEACHER:
-      courses = await Course.find({ teacherId: loggedInUser.userID }).populate('teacherId classId');
-      break;
-
-    case USER_ROLES.STUDENT: {
-      const student = await Student.findOne({ userId: loggedInUser.userID });
-      if (!student) return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Student record not found');
-
-      courses = await Course.find({ classId: student.classId }).populate('teacherId classId');
-      break;
-    }
-
-    case USER_ROLES.PARENT: {
-      const parent = await Parent.findOne({ userId: loggedInUser._id }).populate('childrenId');
-      if (!parent) return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Parent record not found');
-
-      const classIds = parent.childrenId.map((c) => c.classId).filter(Boolean);
-      if (classIds.length === 0) {
-        courses = [];
-      } else {
-        courses = await Course.find({ classId: { $in: classIds } }).populate('teacherId classId');
-      }
-      break;
-    }
-
     default:
       return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, 'Access forbidden');
   }
@@ -260,4 +234,101 @@ exports.viewCourseById = asyncHandler(async (req, res) => {
   }
 
   return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, 'Access forbidden');
+});
+
+// @desc    1. Get courses list by Class ID
+// @route   GET /api/courses/class/:classId
+exports.getCoursesByClass = asyncHandler(async (req, res) => {
+  const { classId } = req.params;
+
+  // Find all active courses for this class
+  const courses = await Course.find({ 
+    classId: classId,
+    isActive: true 
+  })
+  .populate('teacherId', 'firstName lastName email userID') // Show teacher details
+  .populate('classId', 'className classCode classID')       // Show class details
+  .sort({ courseName: 1 });
+
+  if (!courses.length) {
+    return res.status(404).json({
+      success: false,
+      message: 'No active courses found for this class',
+      data: []
+    });
+  }
+
+  return res.status(200).json({
+    success: true,
+    count: courses.length,
+    data: courses
+  });
+});
+
+// @desc    2. Get courses list by Teacher ID
+// @route   GET /api/courses/teacher/:teacherId
+// @access  Private
+exports.getCoursesByTeacher = asyncHandler(async (req, res) => {
+  const { employeeId } = req.params; 
+
+  const courses = await Course.find({ 
+    teacherId: employeeId,
+    isActive: true 
+  })
+  .populate('classId', 'className classCode classID') // Vital to see which class this course belongs to
+  .sort({ academicYear: -1, courseName: 1 });
+
+  if (!courses.length) {
+    return res.status(404).json({
+      success: false,
+      message: 'No active courses found for this teacher',
+      data: []
+    });
+  }
+
+  return res.status(200).json({
+    success: true,
+    count: courses.length,
+    data: courses
+  });
+});
+
+// @desc    3. Get courses by Student ID (Current Courses)
+// @route   GET /api/courses/student/:studentId
+// @access  Private
+exports.getCoursesByStudent = asyncHandler(async (req, res) => {
+  const { studentId } = req.params; 
+
+  const student = await Student.findOne({ studentId: studentId });
+
+  if (!student) {
+    return res.status(404).json({
+      success: false,
+      message: 'Student record not found'
+    });
+  }
+
+  if (!student.classId || student.classId.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Student is not enrolled in any class'
+    });
+  }
+
+  // B. Find courses that match ANY of the student's Class IDs
+  // We use the $in operator because classId is an array in the Student schema
+  const courses = await Course.find({
+    classId: { $in: student.classId },
+    isActive: true
+  })
+  .populate('teacherId', 'firstName lastName email')
+  .populate('classId', 'className classCode')
+  .sort({ courseName: 1 });
+
+  return res.status(200).json({
+    success: true,
+    count: courses.length,
+    studentClassIds: student.classId,
+    data: courses
+  });
 });
