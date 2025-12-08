@@ -3,6 +3,7 @@ const { asyncHandler } = require('../middlewares/asyncHandler');
 const { sendSuccessResponse, sendErrorResponse } = require('../utils/response');
 const { HTTP_STATUS, USER_ROLES, ROLE_NAMES } = require('../config/constants');
 const { validateRequiredFields, isValidEmail, validatePassword, sanitizeString } = require('../utils/validation');
+const {enrollStudent} = require('./classController');
 const Parent = require('../models/Parent');
 const Teacher = require('../models/Teacher');
 const Student = require('../models/Student');
@@ -49,7 +50,8 @@ const register = asyncHandler(async (req, res) => {
     gender,
     bloodGroup,
     profileImage,
-    userID
+    userID,
+    classId
   } = req.body;
 
   // Required validations
@@ -133,7 +135,6 @@ const register = asyncHandler(async (req, res) => {
   if (roleNumber === USER_ROLES.STUDENT) {
     await Student.create({
       userId: addedUser._id,
-      classId: req.body.classId,
       admissionDate: req.body.admissionDate,
       studentId: sanitizeString(req.body.studentId),
     })
@@ -418,7 +419,6 @@ const deleteUser = asyncHandler(async (req, res) => {
 // @route   GET /api/users/list (Admin Only)
 const getUserList = asyncHandler(async (req, res) => {
   const { role } = req.query;
-  console.log("Requested role:", role);
   let responseData = {};
 
   // 1. FETCH STUDENTS
@@ -432,7 +432,6 @@ const getUserList = asyncHandler(async (req, res) => {
         populate: { path: 'userId', select: 'userID firstName lastName' } 
       })
       .lean();
-      console.log("Student :", await Student.find().select("userId classId"));
 
     const formattedStudents = students.map(std => {
       if (!std.userId) return null; 

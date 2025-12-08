@@ -275,7 +275,7 @@ exports.getClassDetails = asyncHandler(async (req, res) => {
 });
 
 exports.enrollStudent = asyncHandler(async (studentId, classId) => {
-
+  console.log("Enroll Student called with:", studentId, classId);
   if (!studentId || !classId) {
     return {
       success: false,
