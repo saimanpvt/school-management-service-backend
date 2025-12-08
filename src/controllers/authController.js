@@ -121,10 +121,12 @@ const register = asyncHandler(async (req, res) => {
     profileImage: profileImage || undefined
   });
 
+  console.log("New User Created:", addedUser);
+
   //if user is teacher
   if (roleNumber === USER_ROLES.TEACHER) {
     await Teacher.create({
-      teacherId: addedUser._id,
+      userId: addedUser._id,
       employeeId: sanitizeString(req.body.employeeId),
       experience: req.body.experience,
       DOJ: req.body.DOJ
@@ -457,7 +459,7 @@ const getUserList = asyncHandler(async (req, res) => {
   // 2. FETCH TEACHERS
   if (!role || role === 'Teacher') {
     const teachers = await Teacher.find()
-      .populate('teacherId', 'firstName lastName userID email')
+      .populate('userId', 'firstName lastName userID email')
       .lean();
     const formattedTeachers = teachers.map(tch => {
       if (!tch.userId) return null;

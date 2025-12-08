@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const { USER_ROLES } = require('../config/constants');
 
 const teacherSchema = new mongoose.Schema({
- teacherId: { 
+ userId: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'User', 
     required: true, 
