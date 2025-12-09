@@ -439,36 +439,114 @@ const deleteUser = asyncHandler(async (req, res) => {
 
 
 // @route   GET /api/users/list (Admin Only)
+// const getUserList = asyncHandler(async (req, res) => {
+//   const { role } = req.query;
+//   let responseData = {};
+
+//   // 1. FETCH STUDENTS
+//   if (!role || role === 'Student') {
+//     // Fetch students and populate necessary references
+//     const students = await Student.find()
+//       .populate('userId', 'firstName lastName userID email') 
+//       .populate('classId', 'classCode className')           
+//       .populate({
+//         path: 'parentId',
+//         populate: { path: 'userId', select: 'userID firstName lastName' } 
+//       })
+//       .lean();
+
+//     const formattedStudents = students.map(std => {
+//       if (!std.userId) return null; 
+//       return {
+//         userId: std.userId, 
+//         userRefId: std.userId.userID,
+//         fullName: `${std.userId.firstName} ${std.userId.lastName}`,
+//         classes: std.classId.map(c => ({ 
+//           name: c.className, 
+//           code: c.classCode 
+//         })),
+//         admissionDate: std.admissionDate,
+//         timeWithUs: calculateTimeWithUs(std.admissionDate),
+//         parentUserId: std.parentId?.userId?.userID || 'N/A',
+//         parentName: std.parentId?.userId ? `${std.parentId.userId.firstName} ${std.parentId.userId.lastName}` : 'N/A'
+//       };
+//     }).filter(Boolean);
+
+//     if (role === 'Student') return res.json({ success: true, count: formattedStudents.length, data: formattedStudents });
+//     responseData.students = formattedStudents;
+//   }
+
+//   // 2. FETCH TEACHERS
+//   if (!role || role === 'Teacher') {
+//     const teachers = await Teacher.find()
+//       .populate('userId', 'firstName lastName userID email')
+//       .lean();
+//     const formattedTeachers = teachers.map(tch => {
+//       if (!tch.userId) return null;
+//       return {
+//         dbId: tch._id,
+//         userId: tch.teacherId || tch.userId.userID,
+//         fullName: `${tch.userId.firstName} ${tch.userId.lastName}`,
+//         experience: tch.experience || 'Not Specified',
+//         empId: tch.employeeId || 'N/A'
+//       };
+//     }).filter(Boolean);
+
+//     if (role === 'Teacher') return res.json({ success: true, count: formattedTeachers.length, data: formattedTeachers });
+//     responseData.teachers = formattedTeachers;
+//   }
+
+//   // // 2. FETCH TEACHERS
+//   // if (!role || role === 'Parent') {
+//   //   const parent = await User.find({ role: USER_ROLES.PARENT });
+//   //   if (role === 'Parent') return res.json({ success: true, count: parent.length, data: parent });
+//   //   responseData.parent = parent;
+//   // }
+
+//   // 3. RETURN BOTH (if no role specified)
+//   return res.json({
+//     success: true,
+//     data: responseData
+//   });
+// });
+
+// @desc    Get List of Users (Students/Teachers)
+// @route   GET /api/users/list
 const getUserList = asyncHandler(async (req, res) => {
-  const { role } = req.query;
+  const { role } = req.query; 
   let responseData = {};
 
   // 1. FETCH STUDENTS
   if (!role || role === 'Student') {
-    // Fetch students and populate necessary references
     const students = await Student.find()
-      .populate('userId', 'firstName lastName userID email') 
-      .populate('classId', 'classCode className')           
-      .populate({
-        path: 'parentId',
-        populate: { path: 'userId', select: 'userID firstName lastName' } 
-      })
+      .populate('userId', 'firstName lastName userID email')
+      .populate('classId', 'classCode className classID')
+      .populate('parentId', 'firstName lastName userID')
       .lean();
 
     const formattedStudents = students.map(std => {
       if (!std.userId) return null; 
+
       return {
-        userId: std.userId, 
-        userRefId: std.userId.userID,
+        // 
+        dbId: std._id,
+        userId: std.studentId, 
+        userRefId: std.userId.userID, 
+        
+        // Name
         fullName: `${std.userId.firstName} ${std.userId.lastName}`,
-        classes: std.classId.map(c => ({ 
-          name: c.className, 
-          code: c.classCode 
-        })),
+        email: std.userId.email,
+        
+        classes: std.classId ? std.classId.map(c => ({ 
+          id: c.classID,       
+          name: c.className    
+        })) : [],
+        
         admissionDate: std.admissionDate,
         timeWithUs: calculateTimeWithUs(std.admissionDate),
-        parentUserId: std.parentId?.userId?.userID || 'N/A',
-        parentName: std.parentId?.userId ? `${std.parentId.userId.firstName} ${std.parentId.userId.lastName}` : 'N/A'
+
+        parentUserId: std.parentId?.userID || 'N/A', 
+        parentName: std.parentId ? `${std.parentId.firstName} ${std.parentId.lastName}` : 'N/A'
       };
     }).filter(Boolean);
 
@@ -481,14 +559,20 @@ const getUserList = asyncHandler(async (req, res) => {
     const teachers = await Teacher.find()
       .populate('userId', 'firstName lastName userID email')
       .lean();
+
     const formattedTeachers = teachers.map(tch => {
       if (!tch.userId) return null;
+
       return {
         dbId: tch._id,
-        userId: tch.teacherId || tch.userId.userID,
+        userId: tch.employeeId || tch.userId.userID, 
+        
         fullName: `${tch.userId.firstName} ${tch.userId.lastName}`,
+        email: tch.userId.email,
+
         experience: tch.experience || 'Not Specified',
-        empId: tch.employeeId || 'N/A'
+        department: tch.department || 'N/A',
+        designation: tch.designation || 'N/A'
       };
     }).filter(Boolean);
 
@@ -496,7 +580,13 @@ const getUserList = asyncHandler(async (req, res) => {
     responseData.teachers = formattedTeachers;
   }
 
-  // 3. RETURN BOTH (if no role specified)
+  // 3. FETCH PARENT
+  if (!role || role === 'Parent') {
+    const parent = await User.find({ role: USER_ROLES.PARENT });
+    if (role === 'Parent') return res.json({ success: true, count: parent.length, data: parent });
+    responseData.parent = parent;
+  }
+
   return res.json({
     success: true,
     data: responseData
