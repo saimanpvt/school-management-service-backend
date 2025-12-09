@@ -8,7 +8,7 @@ router.use(authMiddleware);
 
 // Specific Routes
 router.post('/add', allowRoles([USER_ROLES.ADMIN]), courseController.addCourse); // Add new course
-router.get('/all', allowRoles([USER_ROLES.ADMIN]), courseController.getAllCourses); // Admin view all
+router.get('/', allowRoles([USER_ROLES.ADMIN]), courseController.getAllCourses); // Admin view all
 router.get('/teacher/:teacherId', allowRoles([USER_ROLES.ADMIN, USER_ROLES.TEACHER]), courseController.getCoursesByTeacher); // Filter by Teacher
 router.get('/class/:classId', allowRoles([USER_ROLES.ADMIN, USER_ROLES.TEACHER, USER_ROLES.STUDENT, USER_ROLES.PARENT]), courseController.getCoursesByClass); // Filter by Class
 

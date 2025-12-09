@@ -58,12 +58,14 @@ exports.addCourse = asyncHandler(async (req, res) => {
   const requiredFields = ['courseCode', 'courseName', 'duration', 'classId'];
   const fieldValidation = validateRequiredFields(req.body, requiredFields);
 
+  console.log('Field Validation:', fieldValidation);
   if (!fieldValidation.isValid) {
     return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, fieldValidation.message);
   }
-
+  console.log('Field Validation 2 :', fieldValidation);
   // 2. Verify Class Exists
-  const cls = await Class.findById(classId);
+  const cls = await Class.findOne({classID : classId});
+  console.log('Class Lookup:', cls);
   if (!cls) {
     return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Class not found');
   }
@@ -78,8 +80,8 @@ exports.addCourse = asyncHandler(async (req, res) => {
   // VALIDATION LOGIC:
   if (teacherId) {
     // Check if a User exists with this ID and is actually a Teacher
-    const validTeacher = await User.findOne({ _id: teacherId, role: USER_ROLES.TEACHER });
-
+    const validTeacher = await User.findOne({ userId : teacherId, role: USER_ROLES.TEACHER });
+    console.log('Teacher Lookup:', validTeacher);
     if (validTeacher) {
       finalTeacherId = validTeacher._id;
     } else {
@@ -101,7 +103,7 @@ exports.addCourse = asyncHandler(async (req, res) => {
     description,
     duration,
     teacherId: finalTeacherId,
-    classId,
+    classId : cls._id,
     status: finalStatus
   });
 
