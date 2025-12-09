@@ -1,68 +1,20 @@
-const express = require('express');
-const router = express.Router();
-
+const router = require('express').Router();
 const courseController = require('../controllers/courseController');
 const { allowRoles } = require('../middlewares/roleMiddleware');
-const {USER_ROLES } = require('../config/constants');
-const { asyncHandler } = require('../middlewares/asyncHandler');
+const { USER_ROLES } = require('../config/constants');
 const authMiddleware = require('../middlewares/authMiddleware');
-// Apply authentication to all routes
+
 router.use(authMiddleware);
 
-// ADMIN -> add course
-router.post(
-  '/add',
-  allowRoles([USER_ROLES.ADMIN]),
-  asyncHandler(courseController.addCourse)
-);
+// Specific Routes
+router.post('/add', allowRoles([USER_ROLES.ADMIN]), courseController.addCourse); // Add new course
+router.get('/all', allowRoles([USER_ROLES.ADMIN]), courseController.getAllCourses); // Admin view all
+router.get('/teacher/:teacherId', allowRoles([USER_ROLES.ADMIN, USER_ROLES.TEACHER]), courseController.getCoursesByTeacher); // Filter by Teacher
+router.get('/class/:classId', allowRoles([USER_ROLES.ADMIN, USER_ROLES.TEACHER, USER_ROLES.STUDENT, USER_ROLES.PARENT]), courseController.getCoursesByClass); // Filter by Class
 
-// TEACHER, ADMIN -> update own course
-router.put(
-  '/:courseId',
-  allowRoles([USER_ROLES.TEACHER, USER_ROLES.ADMIN]),
-  courseController.updateCourse
-);
-
-// ADMIN -> delete course
-router.delete(
-  '/:courseId',
-  allowRoles([USER_ROLES.ADMIN]),
-  courseController.deleteCourse
-);
-
-// VIEW courses (list) - Admin, Teacher, Student, Parent
-router.get(
-  '/',
-  allowRoles([USER_ROLES.ADMIN, USER_ROLES.TEACHER, USER_ROLES.STUDENT, USER_ROLES.PARENT]),
-  courseController.getCourseList
-);
-
-// VIEW single course
-router.get(
-  '/:courseId',
-  allowRoles([USER_ROLES.ADMIN, USER_ROLES.TEACHER, USER_ROLES.STUDENT, USER_ROLES.PARENT]),
-  courseController.viewCourseById
-);
-
-// VIEW courses (list) - Admin, Teacher, Student, Parent
-router.get(
-  '/teacher/:teacherId',
-  allowRoles([USER_ROLES.TEACHER]),
-  courseController.getCoursesByTeacher
-);
-
-// VIEW courses (list) - Admin, Teacher, Student, Parent
-router.get(
-  '/student/:studentId',
-  allowRoles([USER_ROLES.STUDENT, USER_ROLES.PARENT]),
-  courseController.getCoursesByStudent
-);
-
-// VIEW courses (list) - Admin, Teacher, Student, Parent
-router.get(
-  '/class/:classId',
-  allowRoles([USER_ROLES.STUDENT, USER_ROLES.PARENT]),
-  courseController.getCoursesByClass
-);
+// Dynamic ID Routes (/:id)
+router.get('/:id', allowRoles([USER_ROLES.ADMIN, USER_ROLES.TEACHER, USER_ROLES.STUDENT, USER_ROLES.PARENT]), courseController.viewCourseById); // View single details
+router.put('/:id', allowRoles([USER_ROLES.ADMIN, USER_ROLES.TEACHER]), courseController.updateCourse); // Update course
+router.delete('/:id', allowRoles([USER_ROLES.ADMIN]), courseController.deleteCourse); // Delete course
 
 module.exports = router;

@@ -34,30 +34,23 @@ const courseSchema = new mongoose.Schema({
     ref: 'Class', 
     required: true 
   },
-  academicYear: {
+  status: {
     type: String,
-    required: [true, 'Academic year is required'],
-    match: [/^\d{4}-\d{4}$/, 'Academic year must be in format YYYY-YYYY']
-  },
-  isActive: {
-    type: Boolean,
-    default: true
-  },
+    enum: ['Active', 'Inactive', 'Completed', 'Deleted'],
+    default: 'Active',
+    index: true
+  }
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
 });
 
-
-// Index for efficient queries 
+// Indexes
 courseSchema.index({ courseCode: 1 });
 courseSchema.index({ courseName: 1 });
-courseSchema.index({ academicYear: 1 });
-courseSchema.index({ isActive: 1 });
 courseSchema.index({ teacherId: 1 });
 courseSchema.index({ classId: 1 });
-courseSchema.index({ classId: 1, academicYear: 1 });
 
 // Ensure courseCode is unique
 courseSchema.post('save', function(error, doc, next) {

@@ -1,15 +1,48 @@
 // controllers/courseController.js
 const Course = require('../models/Course');
 const Student = require('../models/Student');
-const Parent = require('../models/Parent');
 const Teacher = require('../models/Teacher');
 const Class = require('../models/Class');
+const User = require('../models/User');
+
+const mongoose = require('mongoose');
 
 const { sendSuccessResponse, sendErrorResponse } = require('../utils/response');
 const { HTTP_STATUS, USER_ROLES } = require('../config/constants');
 const { asyncHandler } = require('../middlewares/asyncHandler');
 const { validateRequiredFields } = require('../utils/validation');
 
+
+const groupCoursesByStatus = (courses, userRole) => {
+  const grouped = {
+    Active: [],
+    Inactive: [],
+    Completed: []
+  };
+
+  // 1. Group courses
+  courses.forEach(course => {
+    if (grouped[course.status]) {
+      grouped[course.status].push(course);
+    }
+  });
+
+  // 2. Security Filter: Hide 'Inactive' for Students and Parents
+  if (userRole === USER_ROLES.STUDENT || userRole === USER_ROLES.PARENT) {
+    delete grouped.Inactive;
+  }
+
+  delete grouped.Deleted;
+
+  return grouped;
+};
+
+// Helper to check if a string is a valid MongoDB ObjectId
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
+// @desc    Add a new Course
+// @route   POST /api/courses
+// @access  Admin
 exports.addCourse = asyncHandler(async (req, res) => {
   const {
     courseCode,
@@ -18,77 +51,89 @@ exports.addCourse = asyncHandler(async (req, res) => {
     duration,
     teacherId,
     classId,
-    academicYear,
-    isActive
+    status
   } = req.body;
 
-  // 1. Validate Required Fields (Excluding teacherId)
-  const requiredFields = ['courseCode', 'courseName', 'duration', 'classId', 'academicYear'];
+  // 1. Validate Required Fields
+  const requiredFields = ['courseCode', 'courseName', 'duration', 'classId'];
   const fieldValidation = validateRequiredFields(req.body, requiredFields);
+
   if (!fieldValidation.isValid) {
     return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, fieldValidation.message);
   }
+
   // 2. Verify Class Exists
-  const cls = await Class.findOne({classId: classId});
+  const cls = await Class.findById(classId);
   if (!cls) {
     return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Class not found');
   }
 
-  // 3. Verify Teacher Exists (Only if teacherId is provided)
+  // 3. Determine Teacher & Status Logic
+  let finalTeacherId = null;
+  
+  // Default status is 'Active' (as per schema), unless user overrides it.
+  // We will force it to 'Inactive' below if teacher is missing.
+  let finalStatus = status || 'Active';
+
+  // VALIDATION LOGIC:
   if (teacherId) {
-    const teacherRecord = await Teacher.findOne({ teacherId: teacherId });
-    if (!teacherRecord) {
-      return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Teacher not found');
+    // Check if a User exists with this ID and is actually a Teacher
+    const validTeacher = await User.findOne({ _id: teacherId, role: USER_ROLES.TEACHER });
+
+    if (validTeacher) {
+      finalTeacherId = validTeacher._id;
+    } else {
+      // REQUIREMENT: If teacherId provided but not found/invalid -> Force Inactive
+      // We do NOT throw an error, we just create it as 'Inactive' without a teacher.
+      console.warn(`Invalid Teacher ID provided: ${teacherId}. Creating course as Inactive.`);
+      finalTeacherId = null;
+      finalStatus = 'Inactive';
     }
+  } else {
+    // REQUIREMENT: No teacherId provided -> Force Inactive
+    finalStatus = 'Inactive';
   }
 
-  // 4. Determine Active Status Logic
-  // Logic: Use user input (or default true), BUT if teacherId is missing, FORCE false.
-  let finalIsActive = isActive !== undefined ? isActive : true;
-  if (!teacherId) {
-    finalIsActive = false;
-  }
-
-  // 5. Create the Course
+  // 4. Create the Course
   const newCourse = await Course.create({
     courseCode,
     courseName,
     description,
     duration,
-    teacherId: teacherId || null,
+    teacherId: finalTeacherId,
     classId,
-    academicYear,
-    isActive: finalIsActive
+    status: finalStatus
   });
 
   return sendSuccessResponse(res, HTTP_STATUS.CREATED, 'Course added successfully', newCourse);
 });
 
+
+// @desc    Update Course Details
+// @route   PUT /api/courses/:id (Accepts MongoID OR Custom CourseCode)
+// @access  Teacher (Own), Admin
 exports.updateCourse = asyncHandler(async (req, res) => {
-  const courseId = req.params.id;
+  const inputId = req.params.id;
   const updates = req.body;
   const userRole = req.user.role;
   const userId = req.user._id;
 
-  // 1. Fetch the course
-  const course = await Course.findOne({courseId: courseId});
+  // 1. Fetch the course (Support MongoID or Custom CourseCode)
+  let query = isValidObjectId(inputId) ? { _id: inputId } : { courseCode: inputId };
+  const course = await Course.findOne(query);
+
   if (!course) {
     return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Course not found');
   }
 
-  // ======================================================
   // LOGIC FOR TEACHERS
-  // ======================================================
   if (userRole === USER_ROLES.TEACHER) {
-    // Check Ownership: Ensure course has a teacher and it matches current user
+    // Check Ownership
     if (!course.teacherId || course.teacherId.toString() !== userId.toString()) {
       return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, 'You can update only your assigned courses');
     }
 
-    // List of fields a Teacher is ALLOWED to change
-    const allowedTeacherFields = ['description', 'academicYear', 'isActive', 'duration'];
-    
-    // Check for attempted updates to restricted fields
+    // Attempting to update restricted fields
     const restrictedFields = ["classId", "teacherId", "courseCode", "courseName"];
     for (const field of restrictedFields) {
       if (updates[field] !== undefined) {
@@ -96,32 +141,35 @@ exports.updateCourse = asyncHandler(async (req, res) => {
       }
     }
 
-    // Apply allowed updates
-    allowedTeacherFields.forEach((field) => {
-      if (updates[field] !== undefined) {
-        course[field] = updates[field];
+    // Apply Allowed Updates
+    // Teacher can change description, duration, academicYear, and status
+    if (updates.description !== undefined) course.description = updates.description;
+    if (updates.duration !== undefined) course.duration = updates.duration;
+    
+    // Status Logic for Teacher
+    if (updates.status !== undefined) {
+      if (['Active', 'Inactive', 'Completed'].includes(updates.status)) {
+        course.status = updates.status;
+      } else {
+        return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, 'Invalid status value');
       }
-    });
+    }
   }
 
-  // ======================================================
   // LOGIC FOR ADMINS
-  // ======================================================
   if (userRole === USER_ROLES.ADMIN) {
-    // 1. Validate Class ID if it is being changed
+    // 1. Validate Class ID if changed
     if (updates.classId) {
-      const cls = await ClassModel.findOne({classId : updates.classId});
-      if (!cls) {
-        return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Class not found');
-      }
+      const cls = await Class.findOne({classID : updates.classId});
+      if (!cls) return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Class not found');
       course.classId = updates.classId;
     }
 
-    // 2. Validate Teacher ID if it is being changed
+    // 2. Validate Teacher ID if changed
     if (updates.teacherId) {
-      const teacher = await Teacher.findOne({ userId: updates.teacherId }); // Assuming Teacher model uses userId
-      if (!teacher) {
-        return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Teacher not found');
+      const teacherRecord = await Teacher.findOne({ userId: updates.teacherId });
+      if (!teacherRecord) {
+        return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Teacher profile not found');
       }
       course.teacherId = updates.teacherId;
     } 
@@ -130,105 +178,130 @@ exports.updateCourse = asyncHandler(async (req, res) => {
       course.teacherId = null;
     }
 
-    // 3. Update other fields (Partial Update)
+    // 3. Update other fields
     if (updates.courseCode !== undefined) course.courseCode = updates.courseCode;
     if (updates.courseName !== undefined) course.courseName = updates.courseName;
     if (updates.description !== undefined) course.description = updates.description;
     if (updates.duration !== undefined) course.duration = updates.duration;
-    if (updates.academicYear !== undefined) course.academicYear = updates.academicYear;
-    if (updates.isActive !== undefined) course.isActive = updates.isActive;
+    
+    if (updates.status !== undefined) {
+        course.status = updates.status;
+    }
   }
 
-  // ======================================================
-  // FINAL CONSISTENCY CHECK & SAVE
-  // ======================================================
-  
+  // FINAL CONSISTENCY CHECK
   // Rule: If there is no teacher assigned, the course cannot be Active
-  if (!course.teacherId) {
-    course.isActive = false;
+  if (!course.teacherId && course.status === 'Active') {
+    course.status = 'Inactive';
   }
 
   await course.save();
-
   return sendSuccessResponse(res, HTTP_STATUS.OK, 'Course updated successfully', course);
 });
 
-/**
- * Teacher - delete own course
- */
+// @desc    Soft Delete Course (Set status to 'Deleted')
+// @route   DELETE /api/courses/:id
+// @access  Admin Only
 exports.deleteCourse = asyncHandler(async (req, res) => {
-  const { courseId } = req.params;
+  const inputId = req.params.id;
   const loggedInUser = req.user;
-  if (loggedInUser.role == USER_ROLES.ADMIN) {
-    return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, 'Access forbidden: not course owner');
-  }
-  const course = await Course.findOne({courseId : courseId});
-  if (!course) return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Course not found');
-  await Course.findByIdAndDelete(courseId);
 
-  return sendSuccessResponse(res, HTTP_STATUS.OK, 'Course deleted successfully');
-});
-
-/**
- * View courses (list) - role aware
- * Admin -> all courses
- * Teacher -> own courses
- * Student -> courses where classId === student.classId
- * Parent -> courses where classId is any of their childrens' classId
- */
-exports.getCourseList = asyncHandler(async (req, res) => {
-  const loggedInUser = req.user;
-  let courses = [];
-
-  switch (loggedInUser.role) {
-    case USER_ROLES.ADMIN:
-      courses = await Course.find().populate('teacherId classId');
-      break;
-    default:
-      return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, 'Access forbidden');
+  // 1. Strict Authorization Check
+  // Only Admins are allowed to delete courses. 
+  // Teachers, Students, and Parents are blocked here.
+  if (loggedInUser.role !== USER_ROLES.ADMIN) {
+    return sendErrorResponse(
+      res, 
+      HTTP_STATUS.FORBIDDEN, 
+      'Access forbidden: Only Administrators can delete courses'
+    );
   }
 
-  return sendSuccessResponse(res, HTTP_STATUS.OK, 'Courses retrieved successfully', courses);
+  // 2. Find Course (Support MongoID or Custom CourseCode)
+  let query = isValidObjectId(inputId) ? { _id: inputId } : { courseCode: inputId };
+  const course = await Course.findOne(query);
+
+  if (!course) {
+    return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Course not found');
+  }
+
+  // 3. Soft Delete
+  course.status = 'Deleted';
+  await course.save();
+
+  return sendSuccessResponse(res, HTTP_STATUS.OK, 'Course deleted successfully (Soft Delete)');
 });
 
-/**
- * View single course by id - role aware
- */
+// @desc    View Single Course
+// @route   GET /api/courses/:id
+// @access  All Roles (Scoped)
 exports.viewCourseById = asyncHandler(async (req, res) => {
-  const { courseId } = req.params;
+  const inputId = req.params.id;
   const loggedInUser = req.user;
 
-  const course = await Course.findById(courseId).populate('teacherId classId');
-  if (!course) return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Course not found');
+  // 1. Find Course and Populate
+  let query = isValidObjectId(inputId) ? { _id: inputId } : { courseCode: inputId };
+  
+  const course = await Course.findOne(query)
+    .populate('teacherId', 'firstName lastName email')
+    .populate('classId', 'className classCode classID');
 
+  if (!course) {
+    return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Course not found');
+  }
+
+  // 2. Role Based Access Check
+
+  // ADMIN: Full Access
   if (loggedInUser.role === USER_ROLES.ADMIN) {
     return sendSuccessResponse(res, HTTP_STATUS.OK, 'Course retrieved', course);
   }
 
+  // TEACHER: Must own the course
   if (loggedInUser.role === USER_ROLES.TEACHER) {
-    if (String(course.teacherId._id) !== String(loggedInUser._id)) {
-      return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, 'Access forbidden');
+    if (!course.teacherId || course.teacherId._id.toString() !== loggedInUser._id.toString()) {
+      return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, 'Access forbidden: You do not own this course');
     }
     return sendSuccessResponse(res, HTTP_STATUS.OK, 'Course retrieved', course);
   }
 
+  if (course.status === 'Deleted' || course.status === 'Inactive') {
+        return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Course not available');
+    }
+
+  // STUDENT: Course's class must match one of Student's enrolled classes
   if (loggedInUser.role === USER_ROLES.STUDENT) {
     const student = await Student.findOne({ userId: loggedInUser._id });
     if (!student) return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Student record not found');
 
-    if (String(student.classId) !== String(course.classId._id)) {
-      return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, 'Access forbidden');
+    // Check if course.classId is in student.classId Array
+    // course.classId._id is the ObjectId because we populated it above
+    const isEnrolled = student.classId.some(
+      (cid) => cid.toString() === course.classId._id.toString()
+    );
+
+    if (!isEnrolled) {
+      return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, 'Access forbidden: You are not enrolled in this class');
     }
     return sendSuccessResponse(res, HTTP_STATUS.OK, 'Course retrieved', course);
   }
 
+  // PARENT: Course's class must match one of their Children's classes
   if (loggedInUser.role === USER_ROLES.PARENT) {
-    const parent = await Parent.findOne({ userId: loggedInUser._id }).populate('childrenId');
-    if (!parent) return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Parent record not found');
+    // Find all children for this parent
+    const children = await Student.find({ parentId: loggedInUser._id });
+    if (!children || children.length === 0) {
+      return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, 'No children found linked to your account');
+    }
 
-    const childClassIds = parent.childrenId.map((c) => String(c.classId));
-    if (!childClassIds.includes(String(course.classId._id))) {
-      return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, 'Access forbidden');
+    // Collect all class IDs from all children
+    // Flatten array: [ [id1], [id2, id3] ] -> [id1, id2, id3]
+    const allChildClassIds = children.flatMap(child => child.classId.map(id => id.toString()));
+
+    const courseClassId = course.classId._id.toString();
+
+    if (!allChildClassIds.includes(courseClassId)) {
+      return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, 'Access forbidden: None of your children are in this course');
     }
     return sendSuccessResponse(res, HTTP_STATUS.OK, 'Course retrieved', course);
   }
@@ -236,99 +309,58 @@ exports.viewCourseById = asyncHandler(async (req, res) => {
   return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, 'Access forbidden');
 });
 
-// @desc    1. Get courses list by Class ID
+// @desc    1. Get courses list by Teacher ID (Grouped by Status)
+// @route   GET /api/courses/teacher/:teacherId
+exports.getCoursesByTeacher = asyncHandler(async (req, res) => {
+  const { teacherId } = req.params; // Expecting Mongo _id
+
+  const courses = await Course.find({ teacherId })
+    .populate('classId', 'className classCode')
+    .sort({ createdAt: -1 });
+
+  const data = groupCoursesByStatus(courses, req.user.role);
+
+  return res.status(200).json({
+    success: true,
+    data
+  });
+});
+
+// @desc    2. Get courses list by Class ID (Grouped by Status)
 // @route   GET /api/courses/class/:classId
 exports.getCoursesByClass = asyncHandler(async (req, res) => {
   const { classId } = req.params;
 
-  // Find all active courses for this class
-  const courses = await Course.find({ 
-    classId: classId,
-    isActive: true 
-  })
-  .populate('teacherId', 'firstName lastName email userID') // Show teacher details
-  .populate('classId', 'className classCode classID')       // Show class details
-  .sort({ courseName: 1 });
+  const courses = await Course.find({ classId })
+    .populate('teacherId', 'firstName lastName email userID')
+    .sort({ createdAt: -1 });
 
-  if (!courses.length) {
-    return res.status(404).json({
-      success: false,
-      message: 'No active courses found for this class',
-      data: []
-    });
-  }
+  const data = groupCoursesByStatus(courses, req.user.role);
 
   return res.status(200).json({
     success: true,
-    count: courses.length,
-    data: courses
+    data
   });
 });
 
-// @desc    2. Get courses list by Teacher ID
-// @route   GET /api/courses/teacher/:teacherId
-// @access  Private
-exports.getCoursesByTeacher = asyncHandler(async (req, res) => {
-  const { employeeId } = req.params; 
-
-  const courses = await Course.find({ 
-    teacherId: employeeId,
-    isActive: true 
-  })
-  .populate('classId', 'className classCode classID') // Vital to see which class this course belongs to
-  .sort({ academicYear: -1, courseName: 1 });
-
-  if (!courses.length) {
-    return res.status(404).json({
-      success: false,
-      message: 'No active courses found for this teacher',
-      data: []
-    });
+// @desc    3. Get All Courses for Admin (Grouped by Status)
+// @route   GET /api/courses/all
+// @access  Admin only
+exports.getAllCourses = asyncHandler(async (req, res) => {
+  // Optional: Safety check
+  if (req.user.role !== USER_ROLES.ADMIN) {
+    return res.status(403).json({ success: false, message: 'Access Denied' });
   }
+
+  const courses = await Course.find({})
+    .populate('teacherId', 'firstName lastName userID')
+    .populate('classId', 'className classCode')
+    .sort({ createdAt: -1 });
+
+  const data = groupCoursesByStatus(courses, req.user.role);
 
   return res.status(200).json({
     success: true,
-    count: courses.length,
-    data: courses
-  });
-});
-
-// @desc    3. Get courses by Student ID (Current Courses)
-// @route   GET /api/courses/student/:studentId
-// @access  Private
-exports.getCoursesByStudent = asyncHandler(async (req, res) => {
-  const { studentId } = req.params; 
-
-  const student = await Student.findOne({ studentId: studentId });
-
-  if (!student) {
-    return res.status(404).json({
-      success: false,
-      message: 'Student record not found'
-    });
-  }
-
-  if (!student.classId || student.classId.length === 0) {
-    return res.status(400).json({
-      success: false,
-      message: 'Student is not enrolled in any class'
-    });
-  }
-
-  // B. Find courses that match ANY of the student's Class IDs
-  // We use the $in operator because classId is an array in the Student schema
-  const courses = await Course.find({
-    classId: { $in: student.classId },
-    isActive: true
-  })
-  .populate('teacherId', 'firstName lastName email')
-  .populate('classId', 'className classCode')
-  .sort({ courseName: 1 });
-
-  return res.status(200).json({
-    success: true,
-    count: courses.length,
-    studentClassIds: student.classId,
-    data: courses
+    data
   });
 });
