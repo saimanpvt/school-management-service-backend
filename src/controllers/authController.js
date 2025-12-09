@@ -26,7 +26,6 @@ const calculateTimeWithUs = (date) => {
   return `${years} year(s), ${months} month(s)`;
 };
 
-
 // Register a new user
 const register = asyncHandler(async (req, res) => {
   const loggedInUser = req.user;
@@ -144,7 +143,7 @@ const register = asyncHandler(async (req, res) => {
   }
 
   //If user is parent
-  if (roleNumber === USER_ROLES.TEACHER) {
+  if (roleNumber === USER_ROLES.PARENT) {
     let student = await Student.findOne({ studentId: req.body.childrenId });
     if (!student) {
       return sendErrorResponse(
