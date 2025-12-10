@@ -362,76 +362,38 @@ const changePassword = asyncHandler(async (req, res) => {
 const deleteUser = asyncHandler(async (req, res) => {
   const admin = req.user;
   const userIdToDelete = req.params.userId;
+  console.log("for UserID:", userIdToDelete);
 
   // Only admin can delete any user
   if (admin.role !== USER_ROLES.ADMIN) {
     return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, "Only Admin can delete users");
   }
-
+  console.log("Role : ", admin.role);
   // Prevent admin from deleting themselves
   if (String(admin._id) === String(userIdToDelete)) {
     return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, "Admin cannot delete themselves");
   }
 
   // Check user existence
-  const user = await User.findById(userIdToDelete);
+  const user = await User.findOne({userID: userIdToDelete});
+  console.log("User : ", user);
   if (!user) {
     return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, "User not found");
   }
 
-  // -------------------------
   // 1. HANDLE STUDENT DELETE
-  // -------------------------
-  const student = await Student.findOne({ userId: userIdToDelete });
+  const student = await Student.findOne({ userId: user._id });
 
-  if (student) {
-    // Find all parents having this child
-    const parentsWithChild = await Parent.find({ childrenId: student._id });
 
-    // Remove student from parent children lists
-    await Parent.updateMany(
-      { childrenId: student._id },
-      { $pull: { childrenId: student._id } }
-    );
-
-    // Delete student record
-    await Student.findByIdAndDelete(student._id);
-
-    // For each parent → check if they now have zero children
-    for (const parent of parentsWithChild) {
-      const updatedParent = await Parent.findById(parent._id);
-
-      if (updatedParent && updatedParent.childrenId.length === 0) {
-        // Delete parent User account first
-        await User.findByIdAndDelete(updatedParent.userId);
-
-        // Delete parent document
-        await Parent.findByIdAndDelete(updatedParent._id);
-      }
-    }
-  }
-
-  // -------------------------
   // 2. HANDLE TEACHER DELETE
-  // -------------------------
-  const teacher = await Teacher.findOne({ userId: userIdToDelete });
+  const teacher = await Teacher.findOne({ userId: user._id });
   if (teacher) {
     await Teacher.findByIdAndDelete(teacher._id);
     await Course.updateMany({ teacherId: userIdToDelete }, { $set: { teacherId: null } });
   }
 
-  // -------------------------
-  // 3. HANDLE PARENT DELETE
-  // -------------------------
-  const parent = await Parent.findOne({ userId: userIdToDelete });
-  if (parent) {
-    await Parent.findByIdAndDelete(parent._id);
-  }
-
-  // -------------------------
   // 4. DELETE BASE USER RECORD
-  // -------------------------
-  await User.findByIdAndDelete(userIdToDelete);
+  await User.findOneAndDelete({ userId: user._id });
 
   return sendSuccessResponse(res, HTTP_STATUS.OK, "User and related data deleted successfully");
 });
