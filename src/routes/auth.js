@@ -11,7 +11,6 @@ router.post('/logout', authController.logout);
 router.use(authMiddleware);
 // register router under protected routes
 router.post('/register', authController.register);
-router.get('/profile', authController.getProfile);
 router.put('/change-password', authController.changePassword);
 router.delete('/delete/:userId', authController.deleteUser);
 
@@ -20,5 +19,8 @@ router.get('/users', authController.getUserList);
 
 //For users : Teacher, Student, Parent 
 router.put('/update/:userId', authController.updateProfile);
+
+//Get profile details
+router.get('/:userId', authController.getProfile);
 
 module.exports = router;

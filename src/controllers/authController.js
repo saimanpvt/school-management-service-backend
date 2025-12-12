@@ -261,27 +261,25 @@ const logout = asyncHandler(async (req, res) => {
 // Get user profile
 const getProfile = asyncHandler(async (req, res) => {
   const loggedInUser = req.user;
-  const { email } = req.body;
-
+  const userIdToGet = req.params.userId;
+  console.log("Get profile for UserID:", userIdToGet);
   let targetUser;
 
+  let user = await User.findOne({userID : userIdToGet }).select('-password -__v -createdAt -updatedAt');
+  if (!user) {
+    return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'User not found');
+  }
   if (loggedInUser.role === USER_ROLES.ADMIN) {
-    if (!email) {
-      return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, 'Mandatory parameter missing');
-    }
-    targetUser = await User.findOne({ email }).select('-password -__v -createdAt -updatedAt');
-    if (!targetUser) {
-      return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'User not found');
-    }
+    targetUser = user;
   }else if (loggedInUser.role === USER_ROLES.PARENT) {
-    if (!email || email === loggedInUser.email) {
+    if (!userIdToGet || userIdToGet === loggedInUser.userID) {
       targetUser = loggedInUser;
     } else {
       const studentRecord = await Student.find({ parentId: loggedInUser._id }).populate('userId');
       if (!studentRecord) {
         return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, 'Access denied to this profile');
       }else {
-        let userRecord = await User.findOne({ email});
+        let userRecord = await User.findOne({ _id: studentRecord.userId._id }).select('-password -__v -createdAt -updatedAt');
         studentRecord[studentUser] = userRecord;
       }
       sendSuccessResponse(res, HTTP_STATUS.OK, 'Profile retrieved successfully', {
@@ -404,6 +402,7 @@ const getUserList = asyncHandler(async (req, res) => {
   const { role } = req.query; 
   let responseData = {};
 
+  console.log("Fetching users for role:", role);
   // 1. FETCH STUDENTS
   if (!role || role === 'Student') {
     const students = await Student.find()

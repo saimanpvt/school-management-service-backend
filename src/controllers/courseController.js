@@ -58,14 +58,11 @@ exports.addCourse = asyncHandler(async (req, res) => {
   const requiredFields = ['courseCode', 'courseName', 'duration', 'classId'];
   const fieldValidation = validateRequiredFields(req.body, requiredFields);
 
-  console.log('Field Validation:', fieldValidation);
   if (!fieldValidation.isValid) {
     return sendErrorResponse(res, HTTP_STATUS.BAD_REQUEST, fieldValidation.message);
   }
-  console.log('Field Validation 2 :', fieldValidation);
   // 2. Verify Class Exists
   const cls = await Class.findOne({classID : classId});
-  console.log('Class Lookup:', cls);
   if (!cls) {
     return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Class not found');
   }
@@ -95,19 +92,47 @@ exports.addCourse = asyncHandler(async (req, res) => {
     // REQUIREMENT: No teacherId provided -> Force Inactive
     finalStatus = 'Inactive';
   }
-
-  // 4. Create the Course
-  const newCourse = await Course.create({
+const newCourse = await Course.create({
     courseCode,
     courseName,
     description,
     duration,
     teacherId: finalTeacherId,
-    classId : cls._id,
+    classId: cls._id, 
     status: finalStatus
   });
 
-  return sendSuccessResponse(res, HTTP_STATUS.CREATED, 'Course added successfully', newCourse);
+  // 5. Populate details for the response (Reuse existing connections)
+  await newCourse.populate([
+    { path: 'teacherId', select: 'userID firstName lastName' },
+    { path: 'classId', select: 'classID className classCode' }
+  ]);
+
+  const c = newCourse.toObject();
+
+  // 6. Format Response (Exclude _id and timestamps)
+  const formattedResponse = {
+    courseCode: c.courseCode,
+    courseName: c.courseName,
+    description: c.description || '',
+    duration: c.duration,
+    status: c.status,
+
+    // Format Teacher (Handle null)
+    teacher: c.teacherId ? {
+      userID: c.teacherId.employeeId,
+      fullName: `${c.teacherId.firstName} ${c.teacherId.lastName}`,
+    } : null,
+
+    // Format Class
+    classDetails: c.classId ? {
+      classID: c.classId.classID, // Custom String ID
+      className: c.classId.className,
+      classCode: c.classId.classCode
+    } : null
+  };
+
+  return sendSuccessResponse(res, HTTP_STATUS.CREATED, 'Course added successfully', formattedResponse);
 });
 
 
@@ -252,11 +277,37 @@ exports.viewCourseById = asyncHandler(async (req, res) => {
     return sendErrorResponse(res, HTTP_STATUS.NOT_FOUND, 'Course not found');
   }
 
+  // 1. Convert Mongoose Document to Plain Object
+  const c = course.toObject();
+
+  // 2. Format the response object
+  const formattedCourse = {
+    courseCode: c.courseCode,
+    courseName: c.courseName,
+    description: c.description || '',
+    duration: c.duration, // in months
+    academicYear: c.academicYear,
+    status: c.status, // Active, Inactive, Completed, Deleted
+    
+    // Teacher Details (Handle null in case of Inactive course)
+    teacher: c.teacherId ? {
+      userID: c.teacherId.userID, // The Custom String ID (e.g. TCH-001)
+      fullName: `${c.teacherId.firstName} ${c.teacherId.lastName}`,
+      email: c.teacherId.email
+    } : null,
+
+    // Class Details
+    classDetails: c.classId ? {
+      classID: c.classId.classID, // The Custom String ID (e.g. CLS-10)
+      className: c.classId.className,
+      classCode: c.classId.classCode
+    } : null,
+  };
   // 2. Role Based Access Check
 
   // ADMIN: Full Access
   if (loggedInUser.role === USER_ROLES.ADMIN) {
-    return sendSuccessResponse(res, HTTP_STATUS.OK, 'Course retrieved', course);
+    return sendSuccessResponse(res, HTTP_STATUS.OK, 'Course retrieved', formattedCourse);
   }
 
   // TEACHER: Must own the course
@@ -264,7 +315,7 @@ exports.viewCourseById = asyncHandler(async (req, res) => {
     if (!course.teacherId || course.teacherId._id.toString() !== loggedInUser._id.toString()) {
       return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, 'Access forbidden: You do not own this course');
     }
-    return sendSuccessResponse(res, HTTP_STATUS.OK, 'Course retrieved', course);
+    return sendSuccessResponse(res, HTTP_STATUS.OK, 'Course retrieved', formattedCourse);
   }
 
   if (course.status === 'Deleted' || course.status === 'Inactive') {
@@ -285,7 +336,7 @@ exports.viewCourseById = asyncHandler(async (req, res) => {
     if (!isEnrolled) {
       return sendErrorResponse(res, HTTP_STATUS.FORBIDDEN, 'Access forbidden: You are not enrolled in this class');
     }
-    return sendSuccessResponse(res, HTTP_STATUS.OK, 'Course retrieved', course);
+    return sendSuccessResponse(res, HTTP_STATUS.OK, 'Course retrieved', formattedCourse);
   }
 
   // PARENT: Course's class must match one of their Children's classes
@@ -346,20 +397,43 @@ exports.getCoursesByClass = asyncHandler(async (req, res) => {
 });
 
 // @desc    3. Get All Courses for Admin (Grouped by Status)
-// @route   GET /api/courses/all
 // @access  Admin only
 exports.getAllCourses = asyncHandler(async (req, res) => {
-  // Optional: Safety check
   if (req.user.role !== USER_ROLES.ADMIN) {
     return res.status(403).json({ success: false, message: 'Access Denied' });
   }
 
+  // 1. Fetch all courses
   const courses = await Course.find({})
     .populate('teacherId', 'firstName lastName userID')
-    .populate('classId', 'className classCode')
-    .sort({ createdAt: -1 });
+    .populate('classId', 'className classCode classID')
+    .sort({ createdAt: -1 })
+    .lean(); 
 
-  const data = groupCoursesByStatus(courses, req.user.role);
+  // 2. Format the data (Flatten nested objects)
+  const formattedCourses = courses.map(c => ({
+    courseCode: c.courseCode,
+    courseName: c.courseName,
+    description: c.description || '',
+    duration: c.duration,
+    status: c.status,
+
+    // Format Teacher
+    teacher: c.teacherId ? {
+      userID: c.teacherId.employeeId,
+      fullName: `${c.teacherId.firstName} ${c.teacherId.lastName}`,
+    } : null,
+
+    // Format Class
+    classDetails: c.classId ? {
+      classID: c.classId.classID,
+      className: c.classId.className,
+      classCode: c.classId.classCode
+    } : null,
+  }));
+
+  // 3. Group by Status using the helper
+  const data = groupCoursesByStatus(formattedCourses, req.user.role);
 
   return res.status(200).json({
     success: true,
