@@ -381,17 +381,20 @@ const deleteUser = asyncHandler(async (req, res) => {
 
   // 1. HANDLE STUDENT DELETE
   const student = await Student.findOne({ userId: user._id });
-
+  console.log("Student : ", student);
+  if (student) {
+    await Student.findByIdAndDelete(student._id);
+  }
 
   // 2. HANDLE TEACHER DELETE
-  const teacher = await Teacher.findOne({ userId: user._id });
+  const teacher = await Teacher.findById(user._id );
   if (teacher) {
     await Teacher.findByIdAndDelete(teacher._id);
     await Course.updateMany({ teacherId: userIdToDelete }, { $set: { teacherId: null } });
   }
 
   // 4. DELETE BASE USER RECORD
-  await User.findOneAndDelete({ userId: user._id });
+  await User.findByIdAndDelete(user._id);
 
   return sendSuccessResponse(res, HTTP_STATUS.OK, "User and related data deleted successfully");
 });
@@ -452,7 +455,7 @@ const getUserList = asyncHandler(async (req, res) => {
 
       return {
         dbId: tch._id,
-        userId: tch.employeeId || tch.userId.userID, 
+        userId: tch.userId.userID, 
         
         fullName: `${tch.userId.firstName} ${tch.userId.lastName}`,
         email: tch.userId.email,
