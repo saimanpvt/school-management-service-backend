@@ -206,7 +206,7 @@ exports.updateExamRecord = asyncHandler(async (req, res) => {
   const updates = req.body;
   const allowedUpdates = [
     'examName', 'examType', 'totalMarks', 'passingMarks', 
-    'examDate', 'startTime', 'duration', 'venue', 'instructions', 
+    'examDate', 'duration', 'venue', 'instructions', 
     'isActive', 'resultsPublished'
   ];
 
@@ -217,8 +217,7 @@ exports.updateExamRecord = asyncHandler(async (req, res) => {
   });
 
   // Handle Course Change (Optional - usually unusual for an existing exam)
-  if (updates.courseId) {
-     // Validate new course ownership logic here if needed
+  if (userRole == USER_ROLES.ADMIN && updates.courseId) {
      exam.course = updates.courseId;
   }
 
