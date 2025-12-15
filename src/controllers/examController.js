@@ -150,13 +150,10 @@ exports.getExamRecord = asyncHandler(async (req, res) => {
 exports.addExamRecord = asyncHandler(async (req, res) => {
   const teacherId = req.user._id;
   const userRole = req.user.role;
-  const { 
-    examName, examType, courseId, totalMarks, 
-    passingMarks, examDate, startTime, duration, venue, instructions 
-  } = req.body;
+  const {examName, examType, courseCode, totalMarks, passingMarks, duration, endTime, venue, instructions} = req.body;
 
   // 1. Check Course
-  const courseDoc = await Course.findById(courseId);
+  const courseDoc = await Course.findOne({courseCode : courseCode});
   if (!courseDoc) return res.status(404).json({ message: "Course not found" });
 
   // 2. Verify Ownership (If Teacher)
@@ -173,15 +170,13 @@ exports.addExamRecord = asyncHandler(async (req, res) => {
   const exam = await Exam.create({
     examName,
     examType,
-    course: courseId, // Map incoming ID to schema field
+    course: courseDoc._id,
     totalMarks,
     passingMarks,
     examDate,
-    startTime,
     duration,
     venue,
     instructions,
-    isActive: true
   });
 
   return res.status(201).json({ success: true, exam });

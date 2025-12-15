@@ -13,7 +13,7 @@ router.get('/', examController.getExamRecordList);
 router.get('/:id', examController.getExamRecord);
 
 // Student + Teacher routes
-router.post('/', allowRoles([USER_ROLES.TEACHER]), examController.addExamRecord);
-router.put('/:id', allowRoles([USER_ROLES.TEACHER]), examController.updateExamRecord);
+router.post('/', allowRoles([USER_ROLES.TEACHER, USER_ROLES.ADMIN]), examController.addExamRecord);
+router.put('update/:id', allowRoles([USER_ROLES.TEACHER, USER_ROLES.ADMIN]), examController.updateExamRecord);
 
 module.exports = router;

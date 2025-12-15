@@ -42,7 +42,9 @@ exports.updateClass = async (req, res) => {
       return res.status(403).json({ message: "Only admins can update classes" });
     }
     const classId = req.params.id;
-    const updated = await Class.findOneAndUpdate({classID:classId}, req.body, {
+    
+    const updated = await Class.findByIdAndUpdate(classId,
+      req.body, {
       new: true,
       runValidators: true
     });
