@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const markSchema = new mongoose.Schema({
+const marksSchema = new mongoose.Schema({
   examId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Exam',
@@ -24,6 +24,6 @@ const markSchema = new mongoose.Schema({
   timestamps: true
 });
 
-markSchema.index({ examId: 1, studentId: 1 }, { unique: true });
+marksSchema.index({ examId: 1, studentId: 1 }, { unique: true });
 
-module.exports = mongoose.model('Mark', markSchema);
+module.exports = mongoose.model('Marks', marksSchema);
