@@ -8,12 +8,11 @@ const { USER_ROLES } = require('../config/constants');
 // All routes require authentication
 router.use(authMiddleware);
 
-// Common routes (accessible by all authenticated users)
 router.get('/', examController.getExamRecordList);
 router.get('/:id', examController.getExamRecord);
-
-// Student + Teacher routes
 router.post('/', allowRoles([USER_ROLES.TEACHER, USER_ROLES.ADMIN]), examController.addExamRecord);
 router.put('update/:id', allowRoles([USER_ROLES.TEACHER, USER_ROLES.ADMIN]), examController.updateExamRecord);
+router.put('delete/:id', allowRoles([USER_ROLES.TEACHER, USER_ROLES.ADMIN]), examController.deleteExamRecord);
+router.put('course/:courseId', allowRoles([USER_ROLES.TEACHER, USER_ROLES.ADMIN]), examController.getExamsByCourse);
 
 module.exports = router;
