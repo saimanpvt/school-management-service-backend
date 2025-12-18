@@ -33,6 +33,11 @@ const studentSchema = new mongoose.Schema({
   studentId: { 
     type: String, 
     required: true,
+  },
+  surplus: { 
+    type: Number, 
+    default: 0, 
+    min: 0 
   }
 }, {
   timestamps: true,
