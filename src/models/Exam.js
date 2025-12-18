@@ -96,18 +96,5 @@ examSchema.index({ examDate: 1 });
 examSchema.index({ examType: 1 });
 examSchema.index({ isActive: 1 });
 
-// Validate end time is after start time
-examSchema.pre('save', function(next) {
-  const startTime = this.startTime.split(':').map(Number);
-  const endTime = this.endTime.split(':').map(Number);
-  const startMinutes = startTime[0] * 60 + startTime[1];
-  const endMinutes = endTime[0] * 60 + endTime[1];
-  
-  if (endMinutes <= startMinutes) {
-    next(new Error('End time must be after start time'));
-  } else {
-    next();
-  }
-});
 
 module.exports = mongoose.model('Exam', examSchema);

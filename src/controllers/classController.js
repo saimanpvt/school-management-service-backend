@@ -66,7 +66,7 @@ exports.deleteClass = async (req, res) => {
     if (req.user.role !== USER_ROLES.ADMIN) {
       return res.status(403).json({ message: "Only admins can delete classes" });
     }
-    const deleted = await Class.findByIdAndUpdate(req.params.id, {classStatus: "inActive"}, {
+    const deleted = await Class.findByIdAndUpdate(req.params.id, {classStatus: "Inactive"}, {
       new: true,
       runValidators: true
     });
