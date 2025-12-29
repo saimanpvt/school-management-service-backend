@@ -17,6 +17,8 @@ const examRoutes = require('./routes/exams');
 const referenceRoutes = require('./routes/references');
 const feeRoutes = require('./routes/fees');
 const classRoutes = require('./routes/class');
+const attendanceRoutes = require('./routes/attendanceRoutes');
+const leaveRoutes = require('./routes/leaveRoutes');
 
 // Import middlewares
 const { errorHandler, notFound } = require('./middlewares/errorMiddleware');
@@ -96,6 +98,8 @@ app.use('/api/exams', examRoutes);
 app.use('/api/references', referenceRoutes);
 app.use('/api/fees', feeRoutes);
 app.use('/api/classes', classRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/leaves', leaveRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
