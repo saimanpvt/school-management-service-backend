@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const studentAttController = require('../controllers/studentAttendanceController');
+const studentAttController = require('../controllers/StudentAttendanceController');
 const teacherAttController = require('../controllers/teacherAttendanceController');
 const { allowRoles } = require('../middlewares/roleMiddleware');
 const { USER_ROLES } = require('../config/constants');

@@ -223,10 +223,122 @@ exports.getConsolidatedReport = asyncHandler(async (req, res) => {
   return sendSuccessResponse(res, HTTP_STATUS.OK, 'Consolidated report generated', report);
 });
 
-// @desc    Standard Report (Date Range)
+// @desc    Standard Report (Date Range & Context)
 // @route   GET /api/attendance/student/report
 exports.getStudentReport = asyncHandler(async (req, res) => {
-  // Logic is essentially same as getConsolidatedReport but matchStage uses req.query.startDate/endDate
-  // (Implementation omitted to avoid redundancy, copy logic from previous answers)
-  return sendSuccessResponse(res, HTTP_STATUS.OK, 'Report logic placeholder');
+  const { 
+    startDate, endDate, 
+    classId, courseId, examId, 
+    studentId 
+  } = req.query;
+
+  // 1. Build Match Stage
+  const matchStage = {};
+
+  // A. Date Filter (Required for Standard Report)
+  // If not provided, you might default to current month, but here we strictly respect inputs
+  if (startDate && endDate) {
+    matchStage.date = {
+      $gte: new Date(new Date(startDate).setHours(0,0,0,0)),
+      $lte: new Date(new Date(endDate).setHours(23,59,59,999))
+    };
+  }
+
+  // B. Context Filter
+  if (examId) {
+    matchStage.type = 'Exam';
+    matchStage.examId = new mongoose.Types.ObjectId(examId);
+  } 
+  else if (courseId) {
+    matchStage.type = 'Course';
+    matchStage.courseId = new mongoose.Types.ObjectId(courseId);
+  } 
+  else if (classId) {
+    // Logic: If filtering by Class, get all courses for that class first
+    const courses = await Course.find({ classId }).select('_id');
+    const courseIds = courses.map(c => c._id);
+    
+    matchStage.type = 'Course';
+    matchStage.courseId = { $in: courseIds };
+  }
+
+  // 2. Aggregation Pipeline
+  const pipeline = [
+    // Step 1: Filter Attendance Sheets
+    { $match: matchStage },
+    
+    // Step 2: Unwind records to process individual student data
+    { $unwind: '$records' },
+
+    // Step 3: Filter Specific Student (Optimization: Filter early)
+    ...(studentId ? [{ $match: { 'records.studentId': new mongoose.Types.ObjectId(studentId) } }] : []),
+
+    // Step 4: Group by Student
+    {
+      $group: {
+        _id: '$records.studentId',
+        
+        // Count Total Sessions (How many sheets they were part of)
+        totalSessions: { $sum: 1 },
+        
+        // Count Statuses
+        present: { 
+          $sum: { $cond: [{ $in: ['$records.status', ['Present', 'Late']] }, 1, 0] } 
+        },
+        absent: { 
+          $sum: { $cond: [{ $eq: ['$records.status', 'Absent'] }, 1, 0] } 
+        },
+        leave: { 
+          $sum: { $cond: [{ $in: ['$records.status', ['Leave', 'Excused']] }, 1, 0] } 
+        }
+      }
+    },
+
+    // Step 5: Lookup Student Info (for Roll No / Custom ID)
+    {
+      $lookup: {
+        from: 'students',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'studentInfo'
+      }
+    },
+    { $unwind: '$studentInfo' },
+
+    // Step 6: Lookup User Info (for Name)
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'studentInfo.userId',
+        foreignField: '_id',
+        as: 'userInfo'
+      }
+    },
+    { $unwind: '$userInfo' },
+
+    // Step 7: Final Projection
+    {
+      $project: {
+        studentId: '$studentInfo.studentId', // Custom ID (e.g. ST-2025)
+        name: { $concat: ['$userInfo.firstName', ' ', '$userInfo.lastName'] },
+        totalWorkingDays: '$totalSessions', // Renaming for clarity
+        present: 1,
+        absent: 1,
+        leave: 1,
+        percentage: { 
+          $multiply: [
+            { $divide: ['$present', '$totalSessions'] }, 
+            100
+          ] 
+        }
+      }
+    },
+    
+    // Step 8: Sort Alphabetically
+    { $sort: { name: 1 } }
+  ];
+
+  const report = await StudentAttendance.aggregate(pipeline);
+
+  return sendSuccessResponse(res, HTTP_STATUS.OK, 'Student attendance report generated', report);
 });
